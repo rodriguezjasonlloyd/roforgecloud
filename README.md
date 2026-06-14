@@ -60,8 +60,8 @@ Pick one, then either type in a universe (game) ID directly, or choose "list
 my universes" to pick from the games your Roblox account has access to.
 
 You only have to log in once — your session is saved to
-`~/.config/roforgecloud/token.json` and refreshed automatically. Run
-`rofct --logout` if you want to sign out.
+`~/.config/roforgecloud/token.json` and refreshed automatically. The main
+menu has a "Login"/"Logout" entry if you want to switch accounts or sign out.
 
 ### Editing Data Store entries needs an API key
 
@@ -89,6 +89,8 @@ rofc datastore delete <universe_id> <data_store_id> <entry_id> [--scope <scope>]
 rofc datastore list <universe_id> <data_store_id> [--filter 'id.startsWith("foo")'] [--scope <scope>]
 rofc datastore list-scopes <universe_id> <data_store_id>
 rofc messaging publish <universe_id> <topic> <message>
+rofc login
+rofc logout
 ```
 
 (`<universe_id>` is your game's ID, found in the Creator Dashboard URL.)
