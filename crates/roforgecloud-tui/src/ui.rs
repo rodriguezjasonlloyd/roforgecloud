@@ -4,7 +4,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
 
-use crate::app::{App, MessagingField, Screen, UNIVERSE_CHOICE_ITEMS};
+use crate::app::{App, MessagingField, Screen, SERVICE_ACCOUNT, UNIVERSE_CHOICE_ITEMS};
 use crate::json_highlight;
 use crate::json_tree;
 
@@ -44,7 +44,20 @@ fn draw_menu(frame: &mut Frame, app: &App, area: Rect) {
     let items: Vec<ListItem> = app
         .menu_items
         .iter()
-        .map(|(label, _)| ListItem::new(*label))
+        .map(|(label, service)| {
+            if *service == SERVICE_ACCOUNT {
+                if app.logged_in {
+                    match &app.username {
+                        Some(username) => ListItem::new(format!("Logout ({username})")),
+                        None => ListItem::new("Logout"),
+                    }
+                } else {
+                    ListItem::new("Login")
+                }
+            } else {
+                ListItem::new(*label)
+            }
+        })
         .collect();
 
     let list = List::new(items)

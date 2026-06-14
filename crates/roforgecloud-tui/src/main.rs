@@ -1,5 +1,4 @@
 mod app;
-pub(crate) mod auth;
 mod json_highlight;
 mod json_tree;
 mod ui;
@@ -18,13 +17,12 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
 use app::{
-    Action, App, MessagingField, Screen, SERVICE_DATA_STORES, SERVICE_MESSAGING,
+    Action, App, MessagingField, Screen, SERVICE_ACCOUNT, SERVICE_DATA_STORES, SERVICE_MESSAGING,
     UNIVERSE_CHOICE_ENTER_ID, UNIVERSE_CHOICE_ITEMS, UNIVERSE_CHOICE_LIST_ALL,
 };
+use roforgecloud_core::auth;
 use roforgecloud_core::oauth::{self, OAuthClient};
 use roforgecloud_core::opencloud::{Credentials, OpenCloudClient};
-
-const DEFAULT_CLIENT_ID: &str = "1394680015364443315";
 
 #[derive(Parser)]
 #[command(
@@ -35,7 +33,7 @@ struct Cli {
     #[arg(long, env = "ROFORGE_API_KEY")]
     api_key: Option<String>,
 
-    #[arg(long, env = "ROFORGE_OAUTH_CLIENT_ID", default_value = DEFAULT_CLIENT_ID)]
+    #[arg(long, env = "ROFORGE_OAUTH_CLIENT_ID", default_value = oauth::DEFAULT_CLIENT_ID)]
     client_id: String,
 
     /// Only needed to talk to Roblox's OAuth endpoints directly, bypassing
@@ -54,10 +52,6 @@ struct Cli {
         default_value = "http://localhost:8675/callback"
     )]
     redirect_uri: String,
-
-    /// Revoke the cached OAuth session and exit (forces a fresh login next run).
-    #[arg(long)]
-    logout: bool,
 }
 
 #[tokio::main]
@@ -65,23 +59,7 @@ async fn main() -> anyhow::Result<()> {
     let _ = dotenvy::dotenv();
     let cli = Cli::parse();
 
-    if cli.logout {
-        let oauth = OAuthClient::new(
-            cli.client_id.clone(),
-            cli.client_secret.clone().unwrap_or_default(),
-            &cli.redirect_uri,
-        )?;
-        let oauth = if cli.client_secret.is_none() && !cli.relay_url.is_empty() {
-            oauth.with_relay(&cli.relay_url)?
-        } else {
-            oauth
-        };
-        auth::logout(&oauth).await?;
-        println!("logged out");
-        return Ok(());
-    }
-
-    let (client, oauth, available_universes) = build_client(&cli).await?;
+    let (client, oauth, available_universes, logged_in, username) = build_client(&cli).await?;
 
     let mut stdout = io::stdout();
     enable_raw_mode()?;
@@ -96,6 +74,8 @@ async fn main() -> anyhow::Result<()> {
         oauth,
         cli.redirect_uri.clone(),
         available_universes,
+        logged_in,
+        username,
     );
 
     let result = run(&mut terminal, &mut app).await;
@@ -109,27 +89,36 @@ async fn main() -> anyhow::Result<()> {
 
 async fn build_client(
     cli: &Cli,
-) -> anyhow::Result<(OpenCloudClient, Option<OAuthClient>, Vec<u64>)> {
-    let oauth = OAuthClient::new(
+) -> anyhow::Result<(
+    OpenCloudClient,
+    Option<OAuthClient>,
+    Vec<u64>,
+    bool,
+    Option<String>,
+)> {
+    let oauth = auth::build_oauth_client(
         cli.client_id.clone(),
-        cli.client_secret.clone().unwrap_or_default(),
+        cli.client_secret.clone(),
+        &cli.relay_url,
         &cli.redirect_uri,
     )?;
-    let oauth = if cli.client_secret.is_none() && !cli.relay_url.is_empty() {
-        oauth.with_relay(&cli.relay_url)?
-    } else {
-        oauth
-    };
 
     if let Some(api_key) = &cli.api_key {
+        let (logged_in, username) = login_state(&oauth).await;
         return Ok((
             OpenCloudClient::new(Credentials::ApiKey(api_key.clone())),
             Some(oauth),
             Vec::new(),
+            logged_in,
+            username,
         ));
     }
 
     let token = auth::access_token(&oauth, &cli.redirect_uri).await?;
+    let username = auth::userinfo(&token)
+        .await
+        .ok()
+        .and_then(|info| info.preferred_username.or(Some(info.sub)));
 
     let resources = oauth.token_resources(&token).await?;
     let available_universes = oauth::authorized_universe_ids(&resources);
@@ -138,7 +127,25 @@ async fn build_client(
         OpenCloudClient::new(Credentials::OAuthToken(token)),
         Some(oauth),
         available_universes,
+        true,
+        username,
     ))
+}
+
+async fn login_state(oauth: &OAuthClient) -> (bool, Option<String>) {
+    if !auth::is_logged_in() {
+        return (false, None);
+    }
+
+    let username = match auth::cached_access_token(oauth).await {
+        Some(token) => auth::userinfo(&token)
+            .await
+            .ok()
+            .and_then(|info| info.preferred_username.or(Some(info.sub))),
+        None => None,
+    };
+
+    (true, username)
 }
 
 async fn run<B: ratatui::backend::Backend + io::Write>(
@@ -186,6 +193,8 @@ async fn run<B: ratatui::backend::Backend + io::Write>(
             edit_value_external(terminal, app).await?;
         } else if let Some(Action::LoadUniverses) = action {
             perform_with_terminal_suspended(terminal, app, Action::LoadUniverses).await?;
+        } else if let Some(Action::Login) = action {
+            perform_with_terminal_suspended(terminal, app, Action::Login).await?;
         } else if let Some(action) = action {
             app.loading = true;
             terminal.draw(|frame| ui::draw(frame, app))?;
@@ -303,11 +312,18 @@ fn handle_menu_key(app: &mut App, code: KeyCode) -> Option<Action> {
             None
         }
         KeyCode::Enter | KeyCode::Char('l') => {
-            app.pending_service = app.menu_items[app.menu_selected].1;
-            app.status.clear();
-            app.universe_choice_selected = 0;
-            app.screen = Screen::UniverseChoice;
-            None
+            let service = app.menu_items[app.menu_selected].1;
+            match service {
+                SERVICE_ACCOUNT if app.logged_in => Some(Action::Logout),
+                SERVICE_ACCOUNT => Some(Action::Login),
+                _ => {
+                    app.pending_service = service;
+                    app.status.clear();
+                    app.universe_choice_selected = 0;
+                    app.screen = Screen::UniverseChoice;
+                    None
+                }
+            }
         }
         KeyCode::Char('q') => {
             app.should_quit = true;

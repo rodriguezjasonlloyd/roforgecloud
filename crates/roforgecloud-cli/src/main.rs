@@ -1,4 +1,6 @@
 use clap::{Parser, Subcommand};
+use roforgecloud_core::auth;
+use roforgecloud_core::oauth;
 use roforgecloud_core::opencloud::{Credentials, OpenCloudClient};
 
 #[derive(Parser)]
@@ -6,6 +8,27 @@ use roforgecloud_core::opencloud::{Credentials, OpenCloudClient};
 struct Cli {
     #[arg(long, env = "ROFORGE_API_KEY", global = true)]
     api_key: Option<String>,
+
+    #[arg(long, env = "ROFORGE_OAUTH_CLIENT_ID", default_value = oauth::DEFAULT_CLIENT_ID, global = true)]
+    client_id: String,
+
+    /// Only needed to talk to Roblox's OAuth endpoints directly, bypassing
+    /// the relay (e.g. if you registered your own OAuth app).
+    #[arg(long, env = "ROFORGE_OAUTH_CLIENT_SECRET", global = true)]
+    client_secret: Option<String>,
+
+    /// OAuth relay that holds the client secret (see `worker/`). Ignored if
+    /// --client-secret is set.
+    #[arg(long, env = "ROFORGE_OAUTH_RELAY_URL", default_value = oauth::DEFAULT_RELAY_URL, global = true)]
+    relay_url: String,
+
+    #[arg(
+        long,
+        env = "ROFORGE_OAUTH_REDIRECT_URI",
+        default_value = "http://localhost:8675/callback",
+        global = true
+    )]
+    redirect_uri: String,
 
     #[command(subcommand)]
     command: Command,
@@ -17,6 +40,10 @@ enum Command {
     Datastore(DatastoreCommand),
     #[command(subcommand)]
     Messaging(MessagingCommand),
+    /// Log in (or re-authorize) via OAuth.
+    Login,
+    /// Revoke the cached OAuth session (forces a fresh login next time).
+    Logout,
 }
 
 #[derive(Subcommand)]
@@ -73,6 +100,29 @@ enum MessagingCommand {
 async fn main() -> anyhow::Result<()> {
     let _ = dotenvy::dotenv();
     let cli = Cli::parse();
+
+    if matches!(cli.command, Command::Login | Command::Logout) {
+        let oauth = auth::build_oauth_client(
+            cli.client_id,
+            cli.client_secret,
+            &cli.relay_url,
+            &cli.redirect_uri,
+        )?;
+
+        match cli.command {
+            Command::Login => {
+                auth::force_login(&oauth, &cli.redirect_uri).await?;
+                println!("logged in");
+            }
+            Command::Logout => {
+                auth::logout(&oauth).await?;
+                println!("logged out");
+            }
+            _ => unreachable!(),
+        }
+
+        return Ok(());
+    }
 
     let api_key = cli
         .api_key
@@ -194,6 +244,7 @@ async fn main() -> anyhow::Result<()> {
                 println!("ok");
             }
         },
+        Command::Login | Command::Logout => unreachable!(),
     }
 
     Ok(())

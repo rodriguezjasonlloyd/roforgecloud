@@ -1,8 +1,8 @@
+use roforgecloud_core::auth;
 use roforgecloud_core::oauth::{self, OAuthClient};
 use roforgecloud_core::opencloud::datastore::{DataStoreEntryInfo, DataStoreInfo};
 use roforgecloud_core::opencloud::OpenCloudClient;
 
-use crate::auth;
 use crate::json_tree::{flatten, JsonNode, JsonNodeValue};
 use crate::userlookup;
 
@@ -37,6 +37,8 @@ pub enum Action {
     BulkUndeleteDataStores,
     PublishMessage,
     LoadUniverses,
+    Login,
+    Logout,
 }
 
 pub const UNIVERSE_CHOICE_LIST_ALL: usize = 0;
@@ -45,6 +47,7 @@ pub const UNIVERSE_CHOICE_ITEMS: &[&str] = &["List my universes (OAuth)", "Enter
 
 pub const SERVICE_DATA_STORES: usize = 0;
 pub const SERVICE_MESSAGING: usize = 1;
+pub const SERVICE_ACCOUNT: usize = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MessagingField {
@@ -57,6 +60,8 @@ pub struct App {
     pub has_api_key: bool,
     pub oauth: Option<OAuthClient>,
     pub redirect_uri: String,
+    pub logged_in: bool,
+    pub username: Option<String>,
     pub universe_id: u64,
     pub universe_input: String,
     pub available_universes: Vec<u64>,
@@ -125,10 +130,13 @@ impl App {
         oauth: Option<OAuthClient>,
         redirect_uri: String,
         available_universes: Vec<u64>,
+        logged_in: bool,
+        username: Option<String>,
     ) -> Self {
         let menu_items = vec![
             ("Data Stores", SERVICE_DATA_STORES),
             ("Messaging", SERVICE_MESSAGING),
+            ("Account", SERVICE_ACCOUNT),
         ];
 
         let username_channel = tokio::sync::mpsc::unbounded_channel();
@@ -139,6 +147,8 @@ impl App {
             has_api_key,
             oauth,
             redirect_uri,
+            logged_in,
+            username,
             universe_id: 0,
             universe_input: String::new(),
             available_universes,
@@ -214,6 +224,48 @@ impl App {
             Action::BulkUndeleteDataStores => self.bulk_undelete_data_stores().await,
             Action::PublishMessage => self.publish_message().await,
             Action::LoadUniverses => self.load_universes().await,
+            Action::Login => self.login().await,
+            Action::Logout => self.logout().await,
+        }
+    }
+
+    pub async fn login(&mut self) {
+        let Some(oauth) = &self.oauth else {
+            self.status =
+                "OAuth not configured: set ROFORGE_OAUTH_CLIENT_ID/ROFORGE_OAUTH_CLIENT_SECRET"
+                    .to_string();
+            return;
+        };
+
+        self.status = "opening browser for login...".to_string();
+        match auth::force_login(oauth, &self.redirect_uri).await {
+            Ok(token) => {
+                self.logged_in = true;
+                self.username = auth::userinfo(&token)
+                    .await
+                    .ok()
+                    .and_then(|info| info.preferred_username.or(Some(info.sub)));
+                self.status = "logged in".to_string();
+            }
+            Err(err) => self.status = format!("error: {err}"),
+        }
+    }
+
+    pub async fn logout(&mut self) {
+        let Some(oauth) = &self.oauth else {
+            self.status =
+                "OAuth not configured: set ROFORGE_OAUTH_CLIENT_ID/ROFORGE_OAUTH_CLIENT_SECRET"
+                    .to_string();
+            return;
+        };
+
+        match auth::logout(oauth).await {
+            Ok(()) => {
+                self.logged_in = false;
+                self.username = None;
+                self.status = "logged out".to_string();
+            }
+            Err(err) => self.status = format!("error: {err}"),
         }
     }
 
