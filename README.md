@@ -1,20 +1,41 @@
 # roforgecloud
 
-A Rust companion for Roblox: a wrapper around the Open Cloud APIs and
-OAuth2 flow, plus a CLI built on top of it.
+A tool for browsing and managing your Roblox game data and sending messages to running game servers, without having to write API calls by hand.
 
-## Workspace layout
+It comes in two forms:
 
-- `crates/roforgecloud-core` — library crate
-  - `opencloud` — Open Cloud REST client (datastores, messaging, ...)
-  - `oauth` — Roblox OAuth2 / OIDC client (PKCE authorization code flow, refresh, token resources)
-- `crates/roforgecloud-cli` — `roforgecloud` binary
-- `crates/roforgecloud-tui` — `roforgecloud-tui` terminal browser for Open Cloud
+- **`rofct`** — a terminal app (TUI) you can navigate with arrow keys. This is the easiest way to use it.
+- **`rofc`** — a command-line tool (CLI) for scripting/automation.
+
+## Getting started (TUI)
+
+```sh
+rofct
+```
+
+That's it — no setup required. It'll open a browser tab asking you to log in with your Roblox account and approve access. After that, you'll see a menu:
+
+- **Data Stores** — browse, search, view, edit, and delete entries in your game's data stores.
+- **Messaging** — publish a message to a topic, for live communication with running game servers.
+
+Pick one, then either type in a universe (game) ID directly, or choose "list my universes" to pick from the games your Roblox account has access to.
+
+Login only happens once — your session is cached at `~/.config/roforgecloud/token.json` and refreshed automatically. Run `rofct --logout` to sign out.
+
+### Data Store access
+
+Browsing/editing Data Store entries requires an [Open Cloud API key](https://create.roblox.com/docs/cloud/auth/api-keys) for that game, set via:
+
+```sh
+export ROFORGE_API_KEY=<your API key>
+```
+
+Without an API key, the Messaging and "list my universes" features still work via the browser login above, but Data Store access will fail — Roblox doesn't currently allow Data Store access through that login method.
 
 ## CLI usage
 
 ```sh
-export ROFORGE_API_KEY=<API_KEY>
+export ROFORGE_API_KEY=<your API key>
 
 rofc datastore list-stores <universe_id>
 rofc datastore get <universe_id> <data_store_id> <entry_id> [--scope <scope>]
@@ -25,45 +46,22 @@ rofc datastore list-scopes <universe_id> <data_store_id>
 rofc messaging publish <universe_id> <topic> <message>
 ```
 
-## TUI usage
+## Workspace layout
+
+- `crates/roforgecloud-core` — shared library (Open Cloud API client, login)
+- `crates/roforgecloud-cli` — the `rofc` binary
+- `crates/roforgecloud-tui` — the `rofct` binary
+- `worker/` — small Cloudflare Worker that lets the browser login work without you needing to register your own app with Roblox
+
+## Advanced: bringing your own login app
+
+By default, the browser login uses a shared app registered by roforgecloud, via the relay in `worker/`. If you'd rather register your own app with Roblox, set:
 
 ```sh
-export ROFORGE_API_KEY=<API_KEY>
-rofct
+export ROFORGE_OAUTH_CLIENT_ID=<your client id>
+export ROFORGE_OAUTH_CLIENT_SECRET=<your client secret>
 ```
 
-The TUI opens to a menu (Data Stores, Messaging). Selecting an item then
-asks whether to enter a universe ID by hand or list authorized universes.
-
-### OAuth mode
-
-In addition to an API key, the TUI authenticates via OAuth2 by default — no
-setup required. It ships with a built-in `client_id` and talks to a hosted
-relay (see `worker/`) that holds the matching client secret, so there's
-nothing to configure:
-
-```sh
-roforgecloud-tui
-```
-
-If `ROFORGE_API_KEY` is also set, the API key is used for Open Cloud calls,
-and OAuth is only used for the "list my universes" option below.
-
-Selecting "List my universes (OAuth)" (or running with no API key at all)
-triggers the OAuth flow on first use: it prints an authorization URL (and
-opens it in your browser), then listens on the redirect URI for the
-callback. The resulting token (and refresh token) are cached at
-`~/.config/roforgecloud/token.json`. It then calls the `token/resources`
-endpoint (via the relay) to discover which universes the token was granted
-access to, and offers them as a selectable list.
-
-Open Cloud DataStore access is not currently available via OAuth2 — only
-`universe-messaging-service:publish` (and `universe:read`, used to discover
-authorized universes) are requested. If you're relying solely on OAuth (no
-API key), Data Stores calls will fail; use an API key for DataStore access.
-
-To use your own OAuth app instead of the built-in one, set
-`ROFORGE_OAUTH_CLIENT_ID` and `ROFORGE_OAUTH_CLIENT_SECRET` — this talks to
-Roblox directly and bypasses the relay. `ROFORGE_OAUTH_REDIRECT_URI` defaults
-to `http://localhost:8675/callback`. `ROFORGE_OAUTH_RELAY_URL` overrides the
-relay URL (ignored if `ROFORGE_OAUTH_CLIENT_SECRET` is set).
+This bypasses the relay and talks to Roblox directly.
+`ROFORGE_OAUTH_REDIRECT_URI` (defaults to `http://localhost:8675/callback`) must match a redirect URI registered on your app.
+`ROFORGE_OAUTH_RELAY_URL` lets you point at your own deployed relay instead (ignored if a client secret is set).
