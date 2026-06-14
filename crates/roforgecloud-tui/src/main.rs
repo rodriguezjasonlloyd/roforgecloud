@@ -253,6 +253,27 @@ async fn edit_value_external<B: ratatui::backend::Backend + io::Write>(
     Ok(())
 }
 
+/// Runs an action that may print to stdout or block on user input outside the
+/// TUI (e.g. an OAuth re-login prompt), temporarily restoring a normal terminal.
+async fn perform_with_terminal_suspended<B: ratatui::backend::Backend + io::Write>(
+    terminal: &mut Terminal<B>,
+    app: &mut App,
+    action: Action,
+) -> anyhow::Result<()> {
+    disable_raw_mode()?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+
+    app.loading = true;
+    app.perform(action).await;
+    app.loading = false;
+
+    enable_raw_mode()?;
+    execute!(terminal.backend_mut(), EnterAlternateScreen)?;
+    terminal.clear()?;
+
+    Ok(())
+}
+
 fn enter_service(app: &mut App) -> Option<Action> {
     match app.pending_service {
         SERVICE_DATA_STORES => {
