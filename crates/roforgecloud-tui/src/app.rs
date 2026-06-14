@@ -688,13 +688,10 @@ impl App {
             return;
         };
 
-        let path = if current.is_closing {
-            current.path.clone()
-        } else if current.is_container {
-            current.path.clone()
-        } else {
+        if !current.is_closing && !current.is_container {
             return;
-        };
+        }
+        let path = current.path.clone();
 
         if let Some(node) = tree.get_mut(&path) {
             node.collapsed = !node.collapsed;
