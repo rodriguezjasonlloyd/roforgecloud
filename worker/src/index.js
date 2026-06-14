@@ -6,7 +6,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    if (request.method === "GET") {
+    if (request.method === "GET" || request.method === "HEAD") {
       if (url.pathname === "/") {
         return html(ENTRY_PAGE);
       }
