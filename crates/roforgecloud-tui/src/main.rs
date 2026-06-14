@@ -24,9 +24,6 @@ use app::{
 use roforgecloud_core::oauth::{self, OAuthClient};
 use roforgecloud_core::opencloud::{Credentials, OpenCloudClient};
 
-// roforgecloud's OAuth app client_id. Not a secret -- safe to bake in.
-// The matching client_secret lives only in the deployed OAuth relay (see
-// `worker/`), which is used by default below.
 const DEFAULT_CLIENT_ID: &str = "1394680015364443315";
 
 #[derive(Parser)]
@@ -253,8 +250,6 @@ async fn edit_value_external<B: ratatui::backend::Backend + io::Write>(
     Ok(())
 }
 
-/// Runs an action that may print to stdout or block on user input outside the
-/// TUI (e.g. an OAuth re-login prompt), temporarily restoring a normal terminal.
 async fn perform_with_terminal_suspended<B: ratatui::backend::Backend + io::Write>(
     terminal: &mut Terminal<B>,
     app: &mut App,

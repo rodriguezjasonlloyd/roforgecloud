@@ -141,8 +141,6 @@ fn is_expired(token: &StoredToken) -> bool {
     }
 }
 
-/// Revokes the cached refresh token (if any) and removes the local cache,
-/// forcing a fresh login on the next `access_token` call.
 pub async fn logout(oauth: &OAuthClient) -> anyhow::Result<()> {
     if let Some(cached) = load_cached_token() {
         if let Some(refresh_token) = &cached.refresh_token {

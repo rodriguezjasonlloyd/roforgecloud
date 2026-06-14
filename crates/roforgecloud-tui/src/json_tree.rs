@@ -51,8 +51,6 @@ impl JsonNode {
         }
     }
 
-    /// Collapses every container below the root, leaving the root's direct
-    /// entries visible but their contents folded.
     pub fn collapse_below_root(&mut self) {
         match &mut self.value {
             JsonNodeValue::Array(items) | JsonNodeValue::Object(items) => {

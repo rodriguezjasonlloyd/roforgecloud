@@ -13,10 +13,6 @@ const TOKEN_URL: &str = "https://apis.roblox.com/oauth/v1/token";
 const RESOURCES_URL: &str = "https://apis.roblox.com/oauth/v1/token/resources";
 const REVOKE_URL: &str = "https://apis.roblox.com/oauth/v1/token/revoke";
 
-/// Default base URL for the roforgecloud OAuth relay (a Cloudflare Worker
-/// that injects the client_id/client_secret, see `worker/`). Overridable so
-/// users can point at their own relay deployment, or set to empty to talk to
-/// Roblox directly (requires a client secret).
 pub const DEFAULT_RELAY_URL: &str = "https://roforgecloud-oauth-relay.amaterxsu.workers.dev";
 
 type RobloxOAuthClient =
@@ -110,9 +106,6 @@ impl OAuthClient {
         })
     }
 
-    /// Route token exchange/refresh and the `token/resources` lookup through
-    /// a relay (see `worker/`) that injects its own client_id/client_secret.
-    /// This lets the CLI operate without holding a real client secret.
     pub fn with_relay(mut self, relay_url: &str) -> Result<Self> {
         let relay_url = relay_url.trim_end_matches('/');
         self.client = self.client.set_token_uri(
@@ -190,8 +183,6 @@ impl OAuthClient {
         Ok(response.json().await?)
     }
 
-    /// Revokes a refresh token, invalidating the whole authorization session
-    /// (the paired access token and the refresh token itself).
     pub async fn revoke(&self, refresh_token: &str) -> Result<()> {
         let response = self
             .http
