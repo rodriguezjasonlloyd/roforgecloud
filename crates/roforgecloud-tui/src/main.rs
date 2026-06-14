@@ -148,6 +148,17 @@ async fn run<B: ratatui::backend::Backend + io::Write>(
             continue;
         }
 
+        if app.show_help {
+            if matches!(key.code, KeyCode::Char('?') | KeyCode::Esc | KeyCode::Char('q')) {
+                app.show_help = false;
+            }
+            continue;
+        }
+        if key.code == KeyCode::Char('?') && !app.text_input_active() {
+            app.show_help = true;
+            continue;
+        }
+
         let action = match app.screen {
             Screen::Menu => handle_menu_key(app, key.code),
             Screen::UniverseChoice => handle_universe_choice_key(app, key.code),
@@ -310,7 +321,6 @@ fn quit_key(code: KeyCode, app: &mut App) -> Option<Option<Action>> {
     }
     if app.needs_quit_confirm() {
         app.arm_confirm(PendingConfirm::Quit);
-        app.status = "press q again to quit, any other key to cancel".to_string();
     } else {
         app.should_quit = true;
     }
@@ -333,11 +343,11 @@ fn handle_pending_confirm(app: &mut App, code: KeyCode) -> Option<Option<Action>
         (PendingConfirm::BulkDeleteEntries, KeyCode::Char('d')) => {
             Some(Some(Action::BulkDeleteEntries))
         }
-        (PendingConfirm::Quit, KeyCode::Char('q')) | (PendingConfirm::TreeQuit, KeyCode::Char('q')) => {
+        (PendingConfirm::Quit, KeyCode::Char('q')) => {
             app.should_quit = true;
             Some(None)
         }
-        (PendingConfirm::TreeQuit, KeyCode::Esc) => {
+        (PendingConfirm::TreeQuit, KeyCode::Esc) | (PendingConfirm::TreeQuit, KeyCode::Char('q')) => {
             app.exit_tree_mode();
             Some(None)
         }
@@ -634,40 +644,27 @@ const STORES_KEYS: &[KeyAction] = &[
         handler: |_| Some(Action::LoadStores),
     },
     KeyAction {
-        keys: &[KeyCode::Char('D')],
-        hint: |_| Some("D: toggle deleted"),
-        handler: |app| {
-            app.stores_show_deleted = !app.stores_show_deleted;
-            Some(Action::LoadStores)
-        },
-    },
-    KeyAction {
         keys: &[KeyCode::Char('d')],
         hint: |app| {
-            if app.stores.is_empty() && app.stores_marked.is_empty() {
-                None
-            } else if app.stores_marked.is_empty() {
-                Some("d: delete")
-            } else {
-                Some("d: delete (selected)")
+            if !app.stores_marked.is_empty() {
+                return Some("d: delete (selected)");
+            }
+            match app.stores.get(app.stores_selected) {
+                Some(store) if store.state.as_deref().is_some_and(|s| s != "ACTIVE") => None,
+                Some(_) => Some("d: delete"),
+                None => None,
             }
         },
         handler: |app| {
             if !app.stores_marked.is_empty() {
-                let count = app.stores_marked.len();
                 app.arm_confirm(PendingConfirm::BulkDeleteStores);
-                app.status = format!(
-                    "press d again to schedule {count} selected data stores for deletion, any other key to cancel"
-                );
                 return None;
             }
-            if app.stores.is_empty() {
+            let store = app.stores.get(app.stores_selected)?;
+            if store.state.as_deref().is_some_and(|s| s != "ACTIVE") {
                 return None;
             }
             app.arm_confirm(PendingConfirm::DeleteStore);
-            app.status =
-                "press d again to schedule this data store for deletion, any other key to cancel"
-                    .to_string();
             None
         },
     },
@@ -688,11 +685,7 @@ const STORES_KEYS: &[KeyAction] = &[
         },
         handler: |app| {
             if !app.stores_marked.is_empty() {
-                let count = app.stores_marked.len();
                 app.arm_confirm(PendingConfirm::BulkUndeleteStores);
-                app.status = format!(
-                    "press u again to restore {count} selected data stores, any other key to cancel"
-                );
                 return None;
             }
             let store = app.stores.get(app.stores_selected)?;
@@ -739,12 +732,12 @@ fn handle_stores_key(app: &mut App, code: KeyCode) -> Option<Action> {
 const ENTRIES_KEYS: &[KeyAction] = &[
     KeyAction {
         keys: &[KeyCode::Char('n')],
-        hint: |_| Some("n/p: next/prev page"),
+        hint: |app| app.entries_next_page_token.is_some().then_some("n: next page"),
         handler: |_| Some(Action::LoadNextEntriesPage),
     },
     KeyAction {
         keys: &[KeyCode::Char('p')],
-        hint: |_| None,
+        hint: |app| (app.entries_page_tokens.len() > 1).then_some("p: prev page"),
         handler: |_| Some(Action::LoadPrevEntriesPage),
     },
     KeyAction {
@@ -791,18 +784,13 @@ const ENTRIES_KEYS: &[KeyAction] = &[
         },
         handler: |app| {
             if !app.entries_marked.is_empty() {
-                let count = app.entries_marked.len();
                 app.arm_confirm(PendingConfirm::BulkDeleteEntries);
-                app.status = format!(
-                    "press d again to delete {count} selected entries, any other key to cancel"
-                );
                 return None;
             }
             if app.visible_entry_indices().is_empty() {
                 return None;
             }
             app.arm_confirm(PendingConfirm::DeleteEntry);
-            app.status = "press d again to delete this entry, any other key to cancel".to_string();
             None
         },
     },
@@ -904,7 +892,6 @@ const VALUE_KEYS: &[KeyAction] = &[
         hint: |_| Some("d: delete"),
         handler: |app| {
             app.arm_confirm(PendingConfirm::DeleteEntry);
-            app.status = "press d again to delete this entry, any other key to cancel".to_string();
             None
         },
     },
@@ -1018,35 +1005,17 @@ const TREE_KEYS: &[KeyAction] = &[
         hint: |_| Some("d: delete entry"),
         handler: |app| {
             app.arm_confirm(PendingConfirm::DeleteEntry);
-            app.status = "press d again to delete this entry, any other key to cancel".to_string();
             None
         },
     },
     KeyAction {
-        keys: &[KeyCode::Esc],
-        hint: |_| Some("esc: exit tree"),
+        keys: &[KeyCode::Esc, KeyCode::Char('q')],
+        hint: |_| Some("esc/q: exit tree"),
         handler: |app| {
             if app.tree_dirty {
                 app.arm_confirm(PendingConfirm::TreeQuit);
-                app.status =
-                    "unsaved changes — esc again discards, q quits, ctrl+s saves".to_string();
             } else {
                 app.exit_tree_mode();
-            }
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('q')],
-        hint: |_| None,
-        handler: |app| {
-            if app.tree_dirty {
-                app.arm_confirm(PendingConfirm::TreeQuit);
-                app.status =
-                    "unsaved changes — q again quits without saving, esc discards, ctrl+s saves"
-                        .to_string();
-            } else {
-                app.should_quit = true;
             }
             None
         },

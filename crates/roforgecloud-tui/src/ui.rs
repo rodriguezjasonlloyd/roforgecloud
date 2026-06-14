@@ -1,7 +1,7 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
 
 use crate::app::{App, MessagingField, Screen, SERVICE_ACCOUNT, UNIVERSE_CHOICE_ITEMS};
@@ -31,6 +31,10 @@ pub fn draw(frame: &mut Frame, app: &App) {
     }
 
     draw_info(frame, app, chunks[1]);
+
+    if app.show_help {
+        draw_help(frame, app, frame.area());
+    }
 }
 
 fn draw_universe_input(frame: &mut Frame, app: &App, area: Rect) {
@@ -168,13 +172,11 @@ fn draw_stores(frame: &mut Frame, app: &App, area: Rect) {
                 spans.push(Span::raw(marker));
             }
             spans.push(Span::raw(store.id.clone()));
-            if let Some(state) = &store.state {
-                if state != "ACTIVE" {
-                    spans.push(Span::styled(
-                        format!("  [{state}]"),
-                        Style::default().fg(Color::DarkGray),
-                    ));
-                }
+            if store.state.as_deref().is_some_and(|state| state != "ACTIVE") {
+                spans.push(Span::styled(
+                    "  [SCHEDULED DELETION]",
+                    Style::default().fg(Color::DarkGray),
+                ));
             }
             ListItem::new(Line::from(spans))
         })
@@ -184,11 +186,7 @@ fn draw_stores(frame: &mut Frame, app: &App, area: Rect) {
         Some(name) => format!("{} ({name})", app.universe_id),
         None => app.universe_id.to_string(),
     };
-    let base_title = if app.stores_show_deleted {
-        format!("Data Stores (universe {universe}, incl. deleted)")
-    } else {
-        format!("Data Stores (universe {universe})")
-    };
+    let base_title = format!("Data Stores (universe {universe})");
     let title = if app.stores_marked.is_empty() {
         base_title
     } else {
@@ -384,21 +382,13 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(paragraph, area);
 }
 
-fn draw_keybinds(frame: &mut Frame, app: &App, area: Rect) {
-    if let Some(pending) = &app.pending_confirm {
-        let paragraph = Paragraph::new(Line::from(pending.footer_hint()))
-            .style(Style::default().fg(Color::DarkGray))
-            .block(Block::default().borders(Borders::ALL));
-        frame.render_widget(paragraph, area);
-        return;
-    }
+const MOVE: &str = "↑/↓ or j/k: move";
+const SCROLL: &str = "↑/↓ or j/k: scroll";
+const QUIT: &str = "q: quit";
+const BACK_QUIT: &str = "esc/h: back   q: quit";
 
-    const MOVE: &str = "↑/↓ or j/k: move";
-    const SCROLL: &str = "↑/↓ or j/k: scroll";
-    const BACK_QUIT: &str = "esc/h: back   q: quit";
-    const QUIT: &str = "q: quit";
-
-    let binds = match app.screen {
+fn screen_binds(app: &App) -> String {
+    match app.screen {
         Screen::Menu => format!("{MOVE}   {}   {QUIT}", crate::menu_hints(app)),
         Screen::UniverseChoice => {
             format!("{MOVE}   {}   {BACK_QUIT}", crate::universe_choice_hints(app))
@@ -419,16 +409,116 @@ fn draw_keybinds(frame: &mut Frame, app: &App, area: Rect) {
             "type to edit   enter: confirm   esc: cancel".to_string()
         }
         Screen::Value if app.tree_mode => {
-            format!("{MOVE}   {}   {QUIT}", crate::tree_hints(app))
+            format!("{MOVE}   {}", crate::tree_hints(app))
         }
         Screen::Value => format!(
             "{SCROLL}   pgup/pgdn: scroll x10   {}   {BACK_QUIT}",
             crate::value_hints(app)
         ),
         Screen::Messaging => "tab: switch field   enter: publish   esc: back".to_string(),
+    }
+}
+
+fn draw_keybinds(frame: &mut Frame, app: &App, area: Rect) {
+    if let Some(pending) = &app.pending_confirm {
+        let paragraph = Paragraph::new(Line::from(pending.footer_hint()))
+            .style(Style::default().fg(Color::DarkGray))
+            .block(Block::default().borders(Borders::ALL));
+        frame.render_widget(paragraph, area);
+        return;
+    }
+
+    let binds = screen_binds(app);
+    let binds = if app.text_input_active() {
+        binds
+    } else {
+        format!("{binds}   ?: help")
     };
     let paragraph = Paragraph::new(Line::from(binds))
         .style(Style::default().fg(Color::DarkGray))
         .block(Block::default().borders(Borders::ALL));
     frame.render_widget(paragraph, area);
+}
+
+fn parse_hints(hints: &str) -> Vec<(String, String)> {
+    hints
+        .split("   ")
+        .filter(|entry| !entry.is_empty())
+        .filter_map(|entry| {
+            let (key, desc) = entry.split_once(": ")?;
+            Some((key.to_string(), desc.to_string()))
+        })
+        .collect()
+}
+
+type HintList = Vec<(String, String)>;
+
+fn help_sections(app: &App) -> Vec<(&'static str, HintList)> {
+    let (movement, other): (HintList, HintList) = parse_hints(&screen_binds(app))
+        .into_iter()
+        .partition(|(key, _)| key.contains('↑') || key.starts_with("pgup"));
+
+    let mut sections = Vec::new();
+    if !movement.is_empty() {
+        sections.push(("Movement", movement));
+    }
+    if !other.is_empty() {
+        sections.push(("This screen", other));
+    }
+    sections.push(("General", parse_hints("?: toggle this help")));
+    sections
+}
+
+fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
+    let vertical = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(area);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(vertical[1])[1]
+}
+
+fn draw_help(frame: &mut Frame, app: &App, area: Rect) {
+    let popup = centered_rect(60, 60, area);
+
+    let mut lines = Vec::new();
+    for (title, binds) in help_sections(app) {
+        if !lines.is_empty() {
+            lines.push(Line::from(""));
+        }
+        lines.push(Line::from(Span::styled(
+            title,
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        )));
+
+        let key_width = binds.iter().map(|(key, _)| key.len()).max().unwrap_or(0);
+        for (key, desc) in binds {
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("  {key:<key_width$}  "),
+                    Style::default().fg(Color::Yellow),
+                ),
+                Span::raw(desc),
+            ]));
+        }
+    }
+
+    frame.render_widget(Clear, popup);
+    let paragraph = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Keybinds (? or esc to close)"),
+    );
+    frame.render_widget(paragraph, popup);
 }

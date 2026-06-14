@@ -76,7 +76,7 @@ impl PendingConfirm {
             PendingConfirm::BulkUndeleteStores => "u: confirm undelete   any other key: cancel",
             PendingConfirm::Quit => "q: confirm quit   any other key: cancel",
             PendingConfirm::TreeQuit => {
-                "q: quit without saving   esc: discard changes   any other key: cancel"
+                "q/esc: discard changes and exit tree   any other key: cancel"
             }
         }
     }
@@ -103,13 +103,13 @@ pub struct App {
     pub should_quit: bool,
     pub loading: bool,
     pub status: String,
+    pub show_help: bool,
 
     pub menu_items: Vec<(&'static str, usize)>,
     pub menu_selected: usize,
 
     pub stores: Vec<DataStoreInfo>,
     pub stores_selected: usize,
-    pub stores_show_deleted: bool,
     pub stores_marked: std::collections::HashSet<usize>,
 
     pub data_store_id: String,
@@ -184,11 +184,11 @@ impl App {
             should_quit: false,
             loading: false,
             status: String::new(),
+            show_help: false,
             menu_items,
             menu_selected: 0,
             stores: Vec::new(),
             stores_selected: 0,
-            stores_show_deleted: false,
             stores_marked: std::collections::HashSet::new(),
             data_store_id: String::new(),
             http: reqwest::Client::new(),
@@ -335,7 +335,7 @@ impl App {
         self.status = "loading data stores...".to_string();
         match self
             .client
-            .list_data_stores(self.universe_id, None, None, self.stores_show_deleted)
+            .list_data_stores(self.universe_id, None, None, true)
             .await
         {
             Ok(result) => {
@@ -486,16 +486,7 @@ impl App {
                 self.entries_marked.clear();
                 self.entries_next_page_token = result.next_page_token;
                 let page = self.entries_page_tokens.len();
-                self.status = format!(
-                    "{} entries (page {page}){}",
-                    self.entries.len(),
-                    match (page > 1, self.entries_next_page_token.is_some()) {
-                        (true, true) => "  p: prev page, n: next page",
-                        (true, false) => "  p: prev page",
-                        (false, true) => "  n: next page",
-                        (false, false) => "",
-                    }
-                );
+                self.status = format!("{} entries (page {page})", self.entries.len());
                 self.resolve_entry_usernames();
             }
             Err(err) => {
@@ -582,6 +573,7 @@ impl App {
     pub fn arm_confirm(&mut self, pending: PendingConfirm) {
         self.pending_confirm = Some(pending);
         self.confirm_deadline = Some(std::time::Instant::now() + Self::CONFIRM_TIMEOUT);
+        self.status.clear();
     }
 
     pub fn cancel_pending_confirms(&mut self) {
@@ -591,6 +583,16 @@ impl App {
 
     pub fn needs_quit_confirm(&self) -> bool {
         !self.stores_marked.is_empty() || !self.entries_marked.is_empty()
+    }
+
+    pub fn text_input_active(&self) -> bool {
+        match self.screen {
+            Screen::UniverseInput | Screen::Messaging => true,
+            Screen::UniverseSelect => self.universe_search_active,
+            Screen::Entries => self.entries_search_active,
+            Screen::Value => self.tree_mode && self.tree_editing,
+            _ => false,
+        }
     }
 
     pub fn check_confirm_timeout(&mut self) {
