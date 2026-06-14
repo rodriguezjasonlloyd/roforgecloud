@@ -55,6 +55,33 @@ pub enum MessagingField {
     Message,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PendingConfirm {
+    DeleteStore,
+    BulkDeleteStores,
+    BulkUndeleteStores,
+    DeleteEntry,
+    BulkDeleteEntries,
+    Quit,
+    TreeQuit,
+}
+
+impl PendingConfirm {
+    pub fn footer_hint(&self) -> &'static str {
+        match self {
+            PendingConfirm::DeleteStore
+            | PendingConfirm::BulkDeleteStores
+            | PendingConfirm::DeleteEntry
+            | PendingConfirm::BulkDeleteEntries => "d: confirm delete   any other key: cancel",
+            PendingConfirm::BulkUndeleteStores => "u: confirm undelete   any other key: cancel",
+            PendingConfirm::Quit => "q: confirm quit   any other key: cancel",
+            PendingConfirm::TreeQuit => {
+                "q: quit without saving   esc: discard changes   any other key: cancel"
+            }
+        }
+    }
+}
+
 pub struct App {
     pub client: OpenCloudClient,
     pub has_api_key: bool,
@@ -82,8 +109,6 @@ pub struct App {
 
     pub stores: Vec<DataStoreInfo>,
     pub stores_selected: usize,
-    pub stores_delete_pending: bool,
-    pub stores_undelete_pending: bool,
     pub stores_show_deleted: bool,
     pub stores_marked: std::collections::HashSet<usize>,
 
@@ -96,11 +121,10 @@ pub struct App {
     pub entries_selected: usize,
     pub entries_next_page_token: Option<String>,
     pub entries_page_tokens: Vec<Option<String>>,
-    pub entries_delete_pending: bool,
-    pub entries_bulk_delete_pending: bool,
     pub entries_marked: std::collections::HashSet<usize>,
     pub entries_search: String,
     pub entries_search_active: bool,
+    pub pending_confirm: Option<PendingConfirm>,
     pub confirm_deadline: Option<std::time::Instant>,
 
     pub value_title: String,
@@ -115,7 +139,6 @@ pub struct App {
     pub tree_editing: bool,
     pub tree_edit_text: String,
     pub tree_dirty: bool,
-    pub tree_quit_pending: bool,
 
     pub messaging_topic: String,
     pub messaging_message: String,
@@ -165,8 +188,6 @@ impl App {
             menu_selected: 0,
             stores: Vec::new(),
             stores_selected: 0,
-            stores_delete_pending: false,
-            stores_undelete_pending: false,
             stores_show_deleted: false,
             stores_marked: std::collections::HashSet::new(),
             data_store_id: String::new(),
@@ -178,11 +199,10 @@ impl App {
             entries_selected: 0,
             entries_next_page_token: None,
             entries_page_tokens: vec![None],
-            entries_delete_pending: false,
-            entries_bulk_delete_pending: false,
             entries_marked: std::collections::HashSet::new(),
             entries_search: String::new(),
             entries_search_active: false,
+            pending_confirm: None,
             confirm_deadline: None,
             value_title: String::new(),
             value_text: String::new(),
@@ -195,7 +215,6 @@ impl App {
             tree_editing: false,
             tree_edit_text: String::new(),
             tree_dirty: false,
-            tree_quit_pending: false,
             messaging_topic: String::new(),
             messaging_message: String::new(),
             messaging_field: MessagingField::Topic,
@@ -332,7 +351,6 @@ impl App {
     }
 
     pub async fn delete_data_store(&mut self) {
-        self.stores_delete_pending = false;
         let Some(store) = self.stores.get(self.stores_selected) else {
             return;
         };
@@ -375,8 +393,6 @@ impl App {
     }
 
     pub async fn bulk_delete_data_stores(&mut self) {
-        self.stores_delete_pending = false;
-
         let mut indices: Vec<usize> = self.stores_marked.iter().copied().collect();
         indices.sort_unstable();
 
@@ -404,8 +420,6 @@ impl App {
     }
 
     pub async fn bulk_undelete_data_stores(&mut self) {
-        self.stores_undelete_pending = false;
-
         let mut indices: Vec<usize> = self.stores_marked.iter().copied().collect();
         indices.sort_unstable();
 
@@ -565,17 +579,18 @@ impl App {
 
     const CONFIRM_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
-    pub fn arm_confirm(&mut self) {
+    pub fn arm_confirm(&mut self, pending: PendingConfirm) {
+        self.pending_confirm = Some(pending);
         self.confirm_deadline = Some(std::time::Instant::now() + Self::CONFIRM_TIMEOUT);
     }
 
     pub fn cancel_pending_confirms(&mut self) {
-        self.entries_delete_pending = false;
-        self.entries_bulk_delete_pending = false;
-        self.stores_delete_pending = false;
-        self.stores_undelete_pending = false;
-        self.tree_quit_pending = false;
+        self.pending_confirm = None;
         self.confirm_deadline = None;
+    }
+
+    pub fn needs_quit_confirm(&self) -> bool {
+        !self.stores_marked.is_empty() || !self.entries_marked.is_empty()
     }
 
     pub fn check_confirm_timeout(&mut self) {
@@ -694,7 +709,7 @@ impl App {
                 self.tree_cursor = 0;
                 self.tree_editing = false;
                 self.tree_dirty = false;
-                self.tree_quit_pending = false;
+                self.pending_confirm = None;
                 self.status.clear();
             }
             Err(err) => {
@@ -706,7 +721,7 @@ impl App {
     pub fn exit_tree_mode(&mut self) {
         self.tree_mode = false;
         self.tree_editing = false;
-        self.tree_quit_pending = false;
+        self.pending_confirm = None;
         self.value_tree = None;
         self.status.clear();
     }
@@ -805,7 +820,7 @@ impl App {
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(&self.value_text) {
             self.value_tree = Some(JsonNode::from_value(&value));
             self.tree_dirty = false;
-            self.tree_quit_pending = false;
+            self.pending_confirm = None;
         }
     }
 
@@ -846,7 +861,6 @@ impl App {
     }
 
     pub async fn delete_entry(&mut self) {
-        self.entries_delete_pending = false;
         let Some(index) = self.current_entry_index() else {
             return;
         };
@@ -879,8 +893,6 @@ impl App {
     }
 
     pub async fn bulk_delete_entries(&mut self) {
-        self.entries_bulk_delete_pending = false;
-
         let mut indices: Vec<usize> = self.entries_marked.iter().copied().collect();
         indices.sort_unstable();
 
