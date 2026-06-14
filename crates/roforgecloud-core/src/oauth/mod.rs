@@ -11,6 +11,7 @@ use crate::error::{Error, Result};
 const AUTH_URL: &str = "https://apis.roblox.com/oauth/v1/authorize";
 const TOKEN_URL: &str = "https://apis.roblox.com/oauth/v1/token";
 const RESOURCES_URL: &str = "https://apis.roblox.com/oauth/v1/token/resources";
+const REVOKE_URL: &str = "https://apis.roblox.com/oauth/v1/token/revoke";
 
 /// Default base URL for the roforgecloud OAuth relay (a Cloudflare Worker
 /// that injects the client_id/client_secret, see `worker/`). Overridable so
@@ -73,6 +74,7 @@ pub struct OAuthClient {
     client_id: String,
     client_secret: String,
     resources_url: String,
+    revoke_url: String,
 }
 
 impl OAuthClient {
@@ -104,6 +106,7 @@ impl OAuthClient {
             client_id,
             client_secret,
             resources_url: RESOURCES_URL.to_string(),
+            revoke_url: REVOKE_URL.to_string(),
         })
     }
 
@@ -117,6 +120,7 @@ impl OAuthClient {
                 .map_err(|e| Error::OAuth(e.to_string()))?,
         );
         self.resources_url = format!("{relay_url}/oauth/v1/token/resources");
+        self.revoke_url = format!("{relay_url}/oauth/v1/token/revoke");
         Ok(self)
     }
 
@@ -184,6 +188,29 @@ impl OAuthClient {
         }
 
         Ok(response.json().await?)
+    }
+
+    /// Revokes a refresh token, invalidating the whole authorization session
+    /// (the paired access token and the refresh token itself).
+    pub async fn revoke(&self, refresh_token: &str) -> Result<()> {
+        let response = self
+            .http
+            .post(&self.revoke_url)
+            .form(&[
+                ("token", refresh_token),
+                ("client_id", self.client_id.as_str()),
+                ("client_secret", self.client_secret.as_str()),
+            ])
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(Error::Api { status, body });
+        }
+
+        Ok(())
     }
 }
 

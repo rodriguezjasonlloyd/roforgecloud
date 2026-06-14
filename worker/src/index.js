@@ -1,5 +1,6 @@
 const ROBLOX_TOKEN_URL = "https://apis.roblox.com/oauth/v1/token";
 const ROBLOX_RESOURCES_URL = "https://apis.roblox.com/oauth/v1/token/resources";
+const ROBLOX_REVOKE_URL = "https://apis.roblox.com/oauth/v1/token/revoke";
 
 export default {
   async fetch(request, env) {
@@ -15,6 +16,10 @@ export default {
 
     if (url.pathname === "/oauth/v1/token/resources") {
       return proxy(ROBLOX_RESOURCES_URL, request, env);
+    }
+
+    if (url.pathname === "/oauth/v1/token/revoke") {
+      return proxy(ROBLOX_REVOKE_URL, request, env);
     }
 
     return new Response("not found", { status: 404 });

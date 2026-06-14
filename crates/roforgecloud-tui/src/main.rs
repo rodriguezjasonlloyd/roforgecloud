@@ -57,12 +57,32 @@ struct Cli {
         default_value = "http://localhost:8675/callback"
     )]
     redirect_uri: String,
+
+    /// Revoke the cached OAuth session and exit (forces a fresh login next run).
+    #[arg(long)]
+    logout: bool,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let _ = dotenvy::dotenv();
     let cli = Cli::parse();
+
+    if cli.logout {
+        let oauth = OAuthClient::new(
+            cli.client_id.clone(),
+            cli.client_secret.clone().unwrap_or_default(),
+            &cli.redirect_uri,
+        )?;
+        let oauth = if cli.client_secret.is_none() && !cli.relay_url.is_empty() {
+            oauth.with_relay(&cli.relay_url)?
+        } else {
+            oauth
+        };
+        auth::logout(&oauth).await?;
+        println!("logged out");
+        return Ok(());
+    }
 
     let (client, oauth, available_universes) = build_client(&cli).await?;
 
@@ -167,6 +187,8 @@ async fn run<B: ratatui::backend::Backend + io::Write>(
 
         if let Some(Action::EditValueExternal) = action {
             edit_value_external(terminal, app).await?;
+        } else if let Some(Action::LoadUniverses) = action {
+            perform_with_terminal_suspended(terminal, app, Action::LoadUniverses).await?;
         } else if let Some(action) = action {
             app.loading = true;
             terminal.draw(|frame| ui::draw(frame, app))?;

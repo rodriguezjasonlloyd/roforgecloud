@@ -23,7 +23,10 @@ pub async fn access_token(oauth: &OAuthClient, redirect_uri: &str) -> anyhow::Re
 
         if let Some(refresh_token) = &cached.refresh_token {
             if let Ok(response) = oauth.refresh(refresh_token).await {
-                let stored = stored_token_from_response(&response);
+                let mut stored = stored_token_from_response(&response);
+                if stored.refresh_token.is_none() {
+                    stored.refresh_token = Some(refresh_token.clone());
+                }
                 save_token(&stored)?;
                 return Ok(stored.access_token);
             }
@@ -136,6 +139,23 @@ fn is_expired(token: &StoredToken) -> bool {
         }
         None => false,
     }
+}
+
+/// Revokes the cached refresh token (if any) and removes the local cache,
+/// forcing a fresh login on the next `access_token` call.
+pub async fn logout(oauth: &OAuthClient) -> anyhow::Result<()> {
+    if let Some(cached) = load_cached_token() {
+        if let Some(refresh_token) = &cached.refresh_token {
+            let _ = oauth.revoke(refresh_token).await;
+        }
+    }
+
+    let path = token_cache_path();
+    if path.exists() {
+        std::fs::remove_file(path)?;
+    }
+
+    Ok(())
 }
 
 fn token_cache_path() -> PathBuf {
