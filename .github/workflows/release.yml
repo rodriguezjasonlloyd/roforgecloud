@@ -1,0 +1,123 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions: {}
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-x86_64
+            archive: roforgecloud-linux-x86_64.tar.gz
+
+          - os: windows-latest
+            platform: windows-x86_64
+            archive: roforgecloud-windows-x86_64.zip
+
+          - os: macos-latest
+            platform: macos
+            archive: roforgecloud-macos.tar.gz
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup update stable
+          rustup default stable
+
+      - name: Build CLI
+        run: cargo build --locked --release -p roforgecloud-cli --bin rofc
+
+      - name: Build TUI
+        run: cargo build --locked --release -p roforgecloud-tui --bin rofct
+
+      - name: Package Linux and macOS binaries
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist
+          cp target/release/rofc dist/rofc
+          cp target/release/rofct dist/rofct
+
+          tar -czf "${{ matrix.archive }}" \
+            -C dist \
+            rofc \
+            rofct
+
+      - name: Package Windows binaries
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+
+          Copy-Item target\release\rofc.exe dist\rofc.exe
+          Copy-Item target\release\rofct.exe dist\rofct.exe
+
+          Compress-Archive `
+            -Path dist\rofc.exe, dist\rofct.exe `
+            -DestinationPath "${{ matrix.archive }}"
+
+      - name: Upload packaged binaries
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: release-${{ matrix.platform }}
+          path: ${{ matrix.archive }}
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download packaged binaries
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create release and upload binaries
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          TAG="$GITHUB_REF_NAME"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release-assets/* --clobber
+          else
+            gh release create "$TAG" \
+              release-assets/* \
+              --title "$TAG" \
+              --generate-notes
+          fi
