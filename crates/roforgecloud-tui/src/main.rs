@@ -17,8 +17,8 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
 use app::{
-    Action, App, MessagingField, Screen, SERVICE_ACCOUNT, SERVICE_DATA_STORES, SERVICE_MESSAGING,
-    UNIVERSE_CHOICE_ENTER_ID, UNIVERSE_CHOICE_ITEMS, UNIVERSE_CHOICE_LIST_ALL,
+    Action, App, MessagingField, PendingConfirm, Screen, SERVICE_ACCOUNT, SERVICE_DATA_STORES,
+    SERVICE_MESSAGING, UNIVERSE_CHOICE_ENTER_ID, UNIVERSE_CHOICE_ITEMS, UNIVERSE_CHOICE_LIST_ALL,
 };
 use roforgecloud_core::auth;
 use roforgecloud_core::oauth::{self, OAuthClient};
@@ -278,84 +278,209 @@ fn enter_service(app: &mut App) -> Option<Action> {
     }
 }
 
-fn handle_menu_key(app: &mut App, code: KeyCode) -> Option<Action> {
+fn move_up(selected: &mut usize) {
+    if *selected > 0 {
+        *selected -= 1;
+    }
+}
+
+fn move_down(selected: &mut usize, len: usize) {
+    if *selected + 1 < len {
+        *selected += 1;
+    }
+}
+
+fn list_nav_key(code: KeyCode, selected: &mut usize, len: usize) -> Option<Option<Action>> {
     match code {
         KeyCode::Up | KeyCode::Char('k') => {
-            if app.menu_selected > 0 {
-                app.menu_selected -= 1;
-            }
-            None
+            move_up(selected);
+            Some(None)
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            if app.menu_selected + 1 < app.menu_items.len() {
-                app.menu_selected += 1;
-            }
-            None
-        }
-        KeyCode::Enter | KeyCode::Char('l') => {
-            let service = app.menu_items[app.menu_selected].1;
-            match service {
-                SERVICE_ACCOUNT if app.logged_in => Some(Action::Logout),
-                SERVICE_ACCOUNT => Some(Action::Login),
-                _ => {
-                    app.pending_service = service;
-                    app.status.clear();
-                    app.universe_choice_selected = 0;
-                    app.screen = Screen::UniverseChoice;
-                    None
-                }
-            }
-        }
-        KeyCode::Char('q') => {
-            app.should_quit = true;
-            None
+            move_down(selected, len);
+            Some(None)
         }
         _ => None,
     }
 }
 
-fn handle_universe_choice_key(app: &mut App, code: KeyCode) -> Option<Action> {
-    match code {
-        KeyCode::Up | KeyCode::Char('k') => {
-            if app.universe_choice_selected > 0 {
-                app.universe_choice_selected -= 1;
-            }
-            None
+fn quit_key(code: KeyCode, app: &mut App) -> Option<Option<Action>> {
+    if code != KeyCode::Char('q') {
+        return None;
+    }
+    if app.needs_quit_confirm() {
+        app.arm_confirm(PendingConfirm::Quit);
+        app.status = "press q again to quit, any other key to cancel".to_string();
+    } else {
+        app.should_quit = true;
+    }
+    Some(None)
+}
+
+fn handle_pending_confirm(app: &mut App, code: KeyCode) -> Option<Option<Action>> {
+    let pending = app.pending_confirm.take()?;
+    app.confirm_deadline = None;
+
+    match (pending, code) {
+        (PendingConfirm::DeleteStore, KeyCode::Char('d')) => Some(Some(Action::DeleteDataStore)),
+        (PendingConfirm::BulkDeleteStores, KeyCode::Char('d')) => {
+            Some(Some(Action::BulkDeleteDataStores))
         }
-        KeyCode::Down | KeyCode::Char('j') => {
-            if app.universe_choice_selected + 1 < UNIVERSE_CHOICE_ITEMS.len() {
-                app.universe_choice_selected += 1;
-            }
-            None
+        (PendingConfirm::BulkUndeleteStores, KeyCode::Char('u')) => {
+            Some(Some(Action::BulkUndeleteDataStores))
         }
-        KeyCode::Enter | KeyCode::Char('l') => match app.universe_choice_selected {
-            UNIVERSE_CHOICE_ENTER_ID => {
-                app.universe_input.clear();
-                app.screen = Screen::UniverseInput;
-                None
-            }
-            UNIVERSE_CHOICE_LIST_ALL => {
-                if app.available_universes.is_empty() {
-                    Some(Action::LoadUniverses)
-                } else {
-                    app.universe_select_selected = 0;
-                    app.screen = Screen::UniverseSelect;
-                    None
-                }
-            }
-            _ => None,
-        },
-        KeyCode::Esc | KeyCode::Backspace | KeyCode::Char('h') => {
-            app.screen = Screen::Menu;
-            app.status.clear();
-            None
+        (PendingConfirm::DeleteEntry, KeyCode::Char('d')) => Some(Some(Action::DeleteEntry)),
+        (PendingConfirm::BulkDeleteEntries, KeyCode::Char('d')) => {
+            Some(Some(Action::BulkDeleteEntries))
         }
-        KeyCode::Char('q') => {
+        (PendingConfirm::Quit, KeyCode::Char('q')) | (PendingConfirm::TreeQuit, KeyCode::Char('q')) => {
             app.should_quit = true;
-            None
+            Some(None)
+        }
+        (PendingConfirm::TreeQuit, KeyCode::Esc) => {
+            app.exit_tree_mode();
+            Some(None)
+        }
+        _ => {
+            app.status.clear();
+            Some(None)
+        }
+    }
+}
+
+fn back_key(code: KeyCode, app: &mut App, screen: Screen) -> Option<Option<Action>> {
+    match code {
+        KeyCode::Esc | KeyCode::Backspace | KeyCode::Char('h') => {
+            app.screen = screen;
+            app.status.clear();
+            Some(None)
         }
         _ => None,
     }
+}
+
+const MENU_KEYS: &[KeyAction] = &[KeyAction {
+    keys: &[KeyCode::Enter, KeyCode::Char('l')],
+    hint: |_| Some("enter/l: open"),
+    handler: |app| {
+        let service = app.menu_items[app.menu_selected].1;
+        match service {
+            SERVICE_ACCOUNT if app.logged_in => Some(Action::Logout),
+            SERVICE_ACCOUNT => Some(Action::Login),
+            _ => {
+                app.pending_service = service;
+                app.status.clear();
+                app.universe_choice_selected = 0;
+                app.screen = Screen::UniverseChoice;
+                None
+            }
+        }
+    },
+}];
+
+pub(crate) fn menu_hints(app: &App) -> String {
+    MENU_KEYS
+        .iter()
+        .filter_map(|action| (action.hint)(app))
+        .collect::<Vec<_>>()
+        .join("   ")
+}
+
+fn handle_menu_key(app: &mut App, code: KeyCode) -> Option<Action> {
+    let len = app.menu_items.len();
+    if let Some(result) = list_nav_key(code, &mut app.menu_selected, len) {
+        return result;
+    }
+    if let Some(result) = quit_key(code, app) {
+        return result;
+    }
+    for action in MENU_KEYS {
+        if action.keys.contains(&code) {
+            return (action.handler)(app);
+        }
+    }
+    None
+}
+
+const UNIVERSE_CHOICE_KEYS: &[KeyAction] = &[KeyAction {
+    keys: &[KeyCode::Enter, KeyCode::Char('l')],
+    hint: |_| Some("enter/l: select"),
+    handler: |app| match app.universe_choice_selected {
+        UNIVERSE_CHOICE_ENTER_ID => {
+            app.universe_input.clear();
+            app.screen = Screen::UniverseInput;
+            None
+        }
+        UNIVERSE_CHOICE_LIST_ALL => {
+            if app.available_universes.is_empty() {
+                Some(Action::LoadUniverses)
+            } else {
+                app.universe_select_selected = 0;
+                app.screen = Screen::UniverseSelect;
+                None
+            }
+        }
+        _ => None,
+    },
+}];
+
+pub(crate) fn universe_choice_hints(app: &App) -> String {
+    UNIVERSE_CHOICE_KEYS
+        .iter()
+        .filter_map(|action| (action.hint)(app))
+        .collect::<Vec<_>>()
+        .join("   ")
+}
+
+fn handle_universe_choice_key(app: &mut App, code: KeyCode) -> Option<Action> {
+    if let Some(result) =
+        list_nav_key(code, &mut app.universe_choice_selected, UNIVERSE_CHOICE_ITEMS.len())
+    {
+        return result;
+    }
+    if let Some(result) = back_key(code, app, Screen::Menu) {
+        return result;
+    }
+    if let Some(result) = quit_key(code, app) {
+        return result;
+    }
+    for action in UNIVERSE_CHOICE_KEYS {
+        if action.keys.contains(&code) {
+            return (action.handler)(app);
+        }
+    }
+    None
+}
+
+const UNIVERSE_SELECT_KEYS: &[KeyAction] = &[
+    KeyAction {
+        keys: &[KeyCode::Char('/')],
+        hint: |_| Some("/: search"),
+        handler: |app| {
+            app.universe_search_active = true;
+            app.status = "search: type to filter by id or name, enter/esc to confirm".to_string();
+            None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Enter, KeyCode::Char('l')],
+        hint: |_| Some("enter/l: select"),
+        handler: |app| {
+            let visible = app.visible_universe_indices();
+            let &index = visible.get(app.universe_select_selected)?;
+            let universe_id = app.available_universes[index];
+            app.universe_id = universe_id;
+            enter_service(app)
+        },
+    },
+];
+
+pub(crate) fn universe_select_hints(app: &App) -> String {
+    UNIVERSE_SELECT_KEYS
+        .iter()
+        .filter_map(|action| (action.hint)(app))
+        .collect::<Vec<_>>()
+        .join("   ")
 }
 
 fn handle_universe_select_key(app: &mut App, code: KeyCode) -> Option<Action> {
@@ -378,49 +503,33 @@ fn handle_universe_select_key(app: &mut App, code: KeyCode) -> Option<Action> {
         return None;
     }
 
-    let visible = app.visible_universe_indices();
+    let visible_len = app.visible_universe_indices().len();
 
-    match code {
-        KeyCode::Up | KeyCode::Char('k') => {
-            if app.universe_select_selected > 0 {
-                app.universe_select_selected -= 1;
-            }
-            None
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            if app.universe_select_selected + 1 < visible.len() {
-                app.universe_select_selected += 1;
-            }
-            None
-        }
-        KeyCode::Char('/') => {
-            app.universe_search_active = true;
-            app.status = "search: type to filter by id or name, enter/esc to confirm".to_string();
-            None
-        }
-        KeyCode::Enter | KeyCode::Char('l') => {
-            let &index = visible.get(app.universe_select_selected)?;
-            let universe_id = app.available_universes[index];
-            app.universe_id = universe_id;
-            enter_service(app)
-        }
-        KeyCode::Esc | KeyCode::Backspace | KeyCode::Char('h') => {
-            if !app.universe_search.is_empty() {
-                app.universe_search.clear();
-                app.universe_select_selected = 0;
-                app.status.clear();
-                return None;
-            }
-            app.screen = Screen::UniverseChoice;
-            app.status.clear();
-            None
-        }
-        KeyCode::Char('q') => {
-            app.should_quit = true;
-            None
-        }
-        _ => None,
+    if let Some(result) = list_nav_key(code, &mut app.universe_select_selected, visible_len) {
+        return result;
     }
+    if let Some(result) = quit_key(code, app) {
+        return result;
+    }
+
+    if matches!(code, KeyCode::Esc | KeyCode::Backspace | KeyCode::Char('h')) {
+        if !app.universe_search.is_empty() {
+            app.universe_search.clear();
+            app.universe_select_selected = 0;
+            app.status.clear();
+            return None;
+        }
+        app.screen = Screen::UniverseChoice;
+        app.status.clear();
+        return None;
+    }
+
+    for action in UNIVERSE_SELECT_KEYS {
+        if action.keys.contains(&code) {
+            return (action.handler)(app);
+        }
+    }
+    None
 }
 
 fn handle_universe_input_key(app: &mut App, code: KeyCode) -> Option<Action> {
@@ -485,64 +594,68 @@ fn handle_messaging_key(app: &mut App, code: KeyCode) -> Option<Action> {
     }
 }
 
-fn handle_stores_key(app: &mut App, code: KeyCode) -> Option<Action> {
-    if app.stores_delete_pending {
-        app.stores_delete_pending = false;
-        app.confirm_deadline = None;
-        if code == KeyCode::Char('d') {
-            if !app.stores_marked.is_empty() {
-                return Some(Action::BulkDeleteDataStores);
-            }
-            return Some(Action::DeleteDataStore);
-        }
-        app.status.clear();
-        return None;
-    }
+struct KeyAction {
+    keys: &'static [KeyCode],
+    hint: fn(&App) -> Option<&'static str>,
+    handler: fn(&mut App) -> Option<Action>,
+}
 
-    if app.stores_undelete_pending {
-        app.stores_undelete_pending = false;
-        app.confirm_deadline = None;
-        if code == KeyCode::Char('u') {
-            if !app.stores_marked.is_empty() {
-                return Some(Action::BulkUndeleteDataStores);
-            }
-            return Some(Action::UndeleteDataStore);
-        }
-        app.status.clear();
-        return None;
-    }
-
-    match code {
-        KeyCode::Up | KeyCode::Char('k') => {
-            if app.stores_selected > 0 {
-                app.stores_selected -= 1;
-            }
-            None
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            if app.stores_selected + 1 < app.stores.len() {
-                app.stores_selected += 1;
-            }
-            None
-        }
-        KeyCode::Char('r') => Some(Action::LoadStores),
-        KeyCode::Char('D') => {
-            app.stores_show_deleted = !app.stores_show_deleted;
-            Some(Action::LoadStores)
-        }
-        KeyCode::Char(' ') => {
+const STORES_KEYS: &[KeyAction] = &[
+    KeyAction {
+        keys: &[KeyCode::Enter, KeyCode::Char('l')],
+        hint: |_| Some("enter/l: open"),
+        handler: |app| {
+            let store = app.stores.get(app.stores_selected)?;
+            app.data_store_id = store.id.clone();
+            app.entries_next_page_token = None;
+            app.screen = Screen::Entries;
+            Some(Action::LoadEntries)
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char(' ')],
+        hint: |_| Some("space: select"),
+        handler: |app| {
             app.toggle_store_mark();
             None
-        }
-        KeyCode::Char('a') => {
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('a')],
+        hint: |_| Some("a: select all"),
+        handler: |app| {
             app.toggle_select_all_stores();
             None
-        }
-        KeyCode::Char('d') => {
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('r')],
+        hint: |_| Some("r: refresh"),
+        handler: |_| Some(Action::LoadStores),
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('D')],
+        hint: |_| Some("D: toggle deleted"),
+        handler: |app| {
+            app.stores_show_deleted = !app.stores_show_deleted;
+            Some(Action::LoadStores)
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('d')],
+        hint: |app| {
+            if app.stores.is_empty() && app.stores_marked.is_empty() {
+                None
+            } else if app.stores_marked.is_empty() {
+                Some("d: delete")
+            } else {
+                Some("d: delete (selected)")
+            }
+        },
+        handler: |app| {
             if !app.stores_marked.is_empty() {
                 let count = app.stores_marked.len();
-                app.stores_delete_pending = true;
-                app.arm_confirm();
+                app.arm_confirm(PendingConfirm::BulkDeleteStores);
                 app.status = format!(
                     "press d again to schedule {count} selected data stores for deletion, any other key to cancel"
                 );
@@ -551,18 +664,32 @@ fn handle_stores_key(app: &mut App, code: KeyCode) -> Option<Action> {
             if app.stores.is_empty() {
                 return None;
             }
-            app.stores_delete_pending = true;
-            app.arm_confirm();
+            app.arm_confirm(PendingConfirm::DeleteStore);
             app.status =
                 "press d again to schedule this data store for deletion, any other key to cancel"
                     .to_string();
             None
-        }
-        KeyCode::Char('u') => {
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('u')],
+        hint: |app| {
+            if !app.stores_marked.is_empty() {
+                Some("u: undelete (selected)")
+            } else if app
+                .stores
+                .get(app.stores_selected)
+                .is_some_and(|s| s.state.as_deref() != Some("ACTIVE"))
+            {
+                Some("u: undelete")
+            } else {
+                None
+            }
+        },
+        handler: |app| {
             if !app.stores_marked.is_empty() {
                 let count = app.stores_marked.len();
-                app.stores_undelete_pending = true;
-                app.arm_confirm();
+                app.arm_confirm(PendingConfirm::BulkUndeleteStores);
                 app.status = format!(
                     "press u again to restore {count} selected data stores, any other key to cancel"
                 );
@@ -573,25 +700,131 @@ fn handle_stores_key(app: &mut App, code: KeyCode) -> Option<Action> {
                 return Some(Action::UndeleteDataStore);
             }
             None
-        }
-        KeyCode::Enter | KeyCode::Char('l') => {
-            let store = app.stores.get(app.stores_selected)?;
-            app.data_store_id = store.id.clone();
-            app.entries_next_page_token = None;
-            app.screen = Screen::Entries;
-            Some(Action::LoadEntries)
-        }
-        KeyCode::Esc | KeyCode::Backspace | KeyCode::Char('h') => {
-            app.screen = Screen::UniverseChoice;
-            app.status.clear();
-            None
-        }
-        KeyCode::Char('q') => {
-            app.should_quit = true;
-            None
-        }
-        _ => None,
+        },
+    },
+];
+
+pub(crate) fn stores_hints(app: &App) -> String {
+    STORES_KEYS
+        .iter()
+        .filter_map(|action| (action.hint)(app))
+        .collect::<Vec<_>>()
+        .join("   ")
+}
+
+fn handle_stores_key(app: &mut App, code: KeyCode) -> Option<Action> {
+    if let Some(result) = handle_pending_confirm(app, code) {
+        return result;
     }
+
+    let len = app.stores.len();
+    if let Some(result) = list_nav_key(code, &mut app.stores_selected, len) {
+        return result;
+    }
+    if let Some(result) = back_key(code, app, Screen::UniverseChoice) {
+        return result;
+    }
+    if let Some(result) = quit_key(code, app) {
+        return result;
+    }
+
+    for action in STORES_KEYS {
+        if action.keys.contains(&code) {
+            return (action.handler)(app);
+        }
+    }
+    None
+}
+
+const ENTRIES_KEYS: &[KeyAction] = &[
+    KeyAction {
+        keys: &[KeyCode::Char('n')],
+        hint: |_| Some("n/p: next/prev page"),
+        handler: |_| Some(Action::LoadNextEntriesPage),
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('p')],
+        hint: |_| None,
+        handler: |_| Some(Action::LoadPrevEntriesPage),
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('r')],
+        hint: |_| Some("r: refresh"),
+        handler: |_| Some(Action::RefreshEntries),
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('/')],
+        hint: |_| Some("/: search"),
+        handler: |app| {
+            app.entries_search_active = true;
+            app.status =
+                "search: type to filter by id or username, enter/esc to confirm".to_string();
+            None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char(' ')],
+        hint: |_| Some("space: select"),
+        handler: |app| {
+            app.toggle_entry_mark();
+            None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('a')],
+        hint: |_| Some("a: select all"),
+        handler: |app| {
+            app.toggle_select_all_visible();
+            None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('d')],
+        hint: |app| {
+            if app.visible_entry_indices().is_empty() && app.entries_marked.is_empty() {
+                None
+            } else if app.entries_marked.is_empty() {
+                Some("d: delete")
+            } else {
+                Some("d: delete (selected)")
+            }
+        },
+        handler: |app| {
+            if !app.entries_marked.is_empty() {
+                let count = app.entries_marked.len();
+                app.arm_confirm(PendingConfirm::BulkDeleteEntries);
+                app.status = format!(
+                    "press d again to delete {count} selected entries, any other key to cancel"
+                );
+                return None;
+            }
+            if app.visible_entry_indices().is_empty() {
+                return None;
+            }
+            app.arm_confirm(PendingConfirm::DeleteEntry);
+            app.status = "press d again to delete this entry, any other key to cancel".to_string();
+            None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Enter, KeyCode::Char('l')],
+        hint: |_| Some("enter/l: view"),
+        handler: |app| {
+            if app.visible_entry_indices().is_empty() {
+                return None;
+            }
+            app.screen = Screen::Value;
+            Some(Action::LoadValue)
+        },
+    },
+];
+
+pub(crate) fn entries_hints(app: &App) -> String {
+    ENTRIES_KEYS
+        .iter()
+        .filter_map(|action| (action.hint)(app))
+        .collect::<Vec<_>>()
+        .join("   ")
 }
 
 fn handle_entries_key(app: &mut App, code: KeyCode) -> Option<Action> {
@@ -614,100 +847,109 @@ fn handle_entries_key(app: &mut App, code: KeyCode) -> Option<Action> {
         return None;
     }
 
-    if app.entries_delete_pending {
-        app.entries_delete_pending = false;
-        app.confirm_deadline = None;
-        if code == KeyCode::Char('d') {
-            return Some(Action::DeleteEntry);
-        }
-        app.status.clear();
-        return None;
-    }
-
-    if app.entries_bulk_delete_pending {
-        app.entries_bulk_delete_pending = false;
-        app.confirm_deadline = None;
-        if code == KeyCode::Char('d') {
-            return Some(Action::BulkDeleteEntries);
-        }
-        app.status.clear();
-        return None;
+    if let Some(result) = handle_pending_confirm(app, code) {
+        return result;
     }
 
     let visible = app.visible_entry_indices().len();
 
-    match code {
-        KeyCode::Up | KeyCode::Char('k') => {
-            if app.entries_selected > 0 {
-                app.entries_selected -= 1;
-            }
-            None
+    if let Some(result) = list_nav_key(code, &mut app.entries_selected, visible) {
+        return result;
+    }
+    if let Some(result) = quit_key(code, app) {
+        return result;
+    }
+
+    if matches!(code, KeyCode::Esc | KeyCode::Backspace | KeyCode::Char('h')) {
+        if !app.entries_search.is_empty() {
+            app.entries_search.clear();
+            app.entries_selected = 0;
+            app.status.clear();
+            return None;
         }
-        KeyCode::Down | KeyCode::Char('j') => {
-            if app.entries_selected + 1 < visible {
-                app.entries_selected += 1;
-            }
-            None
+        app.screen = Screen::Stores;
+        app.status.clear();
+        return None;
+    }
+
+    for action in ENTRIES_KEYS {
+        if action.keys.contains(&code) {
+            return (action.handler)(app);
         }
-        KeyCode::Char('n') => Some(Action::LoadNextEntriesPage),
-        KeyCode::Char('p') => Some(Action::LoadPrevEntriesPage),
-        KeyCode::Char('r') => Some(Action::RefreshEntries),
-        KeyCode::Char('/') => {
-            app.entries_search_active = true;
-            app.status =
-                "search: type to filter by id or username, enter/esc to confirm".to_string();
+    }
+    None
+}
+
+const VALUE_KEYS: &[KeyAction] = &[
+    KeyAction {
+        keys: &[KeyCode::Char('r')],
+        hint: |_| Some("r: refresh"),
+        handler: |_| Some(Action::LoadValue),
+    },
+    KeyAction {
+        keys: &[KeyCode::Enter, KeyCode::Char('l')],
+        hint: |_| Some("enter/l: tree edit"),
+        handler: |app| {
+            app.enter_tree_mode();
             None
-        }
-        KeyCode::Char(' ') => {
-            app.toggle_entry_mark();
-            None
-        }
-        KeyCode::Char('a') => {
-            app.toggle_select_all_visible();
-            None
-        }
-        KeyCode::Char('d') => {
-            if !app.entries_marked.is_empty() {
-                let count = app.entries_marked.len();
-                app.entries_bulk_delete_pending = true;
-                app.arm_confirm();
-                app.status = format!(
-                    "press d again to delete {count} selected entries, any other key to cancel"
-                );
-                return None;
-            }
-            if visible == 0 {
-                return None;
-            }
-            app.entries_delete_pending = true;
-            app.arm_confirm();
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('e')],
+        hint: |_| Some("e: edit in $EDITOR"),
+        handler: |_| Some(Action::EditValueExternal),
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('d')],
+        hint: |_| Some("d: delete"),
+        handler: |app| {
+            app.arm_confirm(PendingConfirm::DeleteEntry);
             app.status = "press d again to delete this entry, any other key to cancel".to_string();
             None
-        }
-        KeyCode::Enter | KeyCode::Char('l') => {
-            if visible == 0 {
-                return None;
-            }
-            app.screen = Screen::Value;
-            Some(Action::LoadValue)
-        }
-        KeyCode::Esc | KeyCode::Backspace | KeyCode::Char('h') => {
-            if !app.entries_search.is_empty() {
-                app.entries_search.clear();
-                app.entries_selected = 0;
-                app.status.clear();
-                return None;
-            }
-            app.screen = Screen::Stores;
-            app.status.clear();
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Up, KeyCode::Char('k')],
+        hint: |_| None,
+        handler: |app| {
+            app.value_scroll = app.value_scroll.saturating_sub(1);
             None
-        }
-        KeyCode::Char('q') => {
-            app.should_quit = true;
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Down, KeyCode::Char('j')],
+        hint: |_| None,
+        handler: |app| {
+            let max_scroll = app.max_value_scroll();
+            app.value_scroll = (app.value_scroll + 1).min(max_scroll);
             None
-        }
-        _ => None,
-    }
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::PageUp],
+        hint: |_| None,
+        handler: |app| {
+            app.value_scroll = app.value_scroll.saturating_sub(10);
+            None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::PageDown],
+        hint: |_| None,
+        handler: |app| {
+            let max_scroll = app.max_value_scroll();
+            app.value_scroll = (app.value_scroll + 10).min(max_scroll);
+            None
+        },
+    },
+];
+
+pub(crate) fn value_hints(app: &App) -> String {
+    VALUE_KEYS
+        .iter()
+        .filter_map(|action| (action.hint)(app))
+        .collect::<Vec<_>>()
+        .join("   ")
 }
 
 fn handle_value_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
@@ -715,48 +957,108 @@ fn handle_value_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Op
         return handle_tree_key(app, code, modifiers);
     }
 
-    if app.entries_delete_pending {
-        app.entries_delete_pending = false;
-        app.confirm_deadline = None;
-        if code == KeyCode::Char('d') {
-            return Some(Action::DeleteEntry);
-        }
-        app.status.clear();
-        return None;
+    if let Some(result) = handle_pending_confirm(app, code) {
+        return result;
+    }
+    if let Some(result) = quit_key(code, app) {
+        return result;
+    }
+    if let Some(result) = back_key(code, app, Screen::Entries) {
+        return result;
     }
 
-    let max_scroll = app.max_value_scroll();
-    match code {
-        KeyCode::Esc | KeyCode::Backspace | KeyCode::Char('h') => {
-            app.screen = Screen::Entries;
-            app.status.clear();
+    for action in VALUE_KEYS {
+        if action.keys.contains(&code) {
+            return (action.handler)(app);
         }
-        KeyCode::Char('r') => return Some(Action::LoadValue),
-        KeyCode::Char('e') => return Some(Action::EditValueExternal),
-        KeyCode::Char('d') => {
-            app.entries_delete_pending = true;
-            app.arm_confirm();
-            app.status = "press d again to delete this entry, any other key to cancel".to_string();
-        }
-        KeyCode::Enter | KeyCode::Char('l') => app.enter_tree_mode(),
-        KeyCode::Up | KeyCode::Char('k') => {
-            app.value_scroll = app.value_scroll.saturating_sub(1);
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            app.value_scroll = (app.value_scroll + 1).min(max_scroll);
-        }
-        KeyCode::PageUp => {
-            app.value_scroll = app.value_scroll.saturating_sub(10);
-        }
-        KeyCode::PageDown => {
-            app.value_scroll = (app.value_scroll + 10).min(max_scroll);
-        }
-        KeyCode::Char('q') => {
-            app.should_quit = true;
-        }
-        _ => {}
     }
     None
+}
+
+const TREE_KEYS: &[KeyAction] = &[
+    KeyAction {
+        keys: &[KeyCode::Char('s')],
+        hint: |_| Some("ctrl+s: save"),
+        handler: |_| None,
+    },
+    KeyAction {
+        keys: &[KeyCode::Up, KeyCode::Char('k')],
+        hint: |_| None,
+        handler: |app| {
+            app.tree_move(-1);
+            None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Down, KeyCode::Char('j')],
+        hint: |_| None,
+        handler: |app| {
+            app.tree_move(1);
+            None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char(' ')],
+        hint: |_| Some("space: fold/unfold"),
+        handler: |app| {
+            app.tree_toggle();
+            None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Enter],
+        hint: |_| Some("enter: edit value"),
+        handler: |app| {
+            app.tree_edit_leaf();
+            None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('d')],
+        hint: |_| Some("d: delete entry"),
+        handler: |app| {
+            app.arm_confirm(PendingConfirm::DeleteEntry);
+            app.status = "press d again to delete this entry, any other key to cancel".to_string();
+            None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Esc],
+        hint: |_| Some("esc: exit tree"),
+        handler: |app| {
+            if app.tree_dirty {
+                app.arm_confirm(PendingConfirm::TreeQuit);
+                app.status =
+                    "unsaved changes — esc again discards, q quits, ctrl+s saves".to_string();
+            } else {
+                app.exit_tree_mode();
+            }
+            None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('q')],
+        hint: |_| None,
+        handler: |app| {
+            if app.tree_dirty {
+                app.arm_confirm(PendingConfirm::TreeQuit);
+                app.status =
+                    "unsaved changes — q again quits without saving, esc discards, ctrl+s saves"
+                        .to_string();
+            } else {
+                app.should_quit = true;
+            }
+            None
+        },
+    },
+];
+
+pub(crate) fn tree_hints(app: &App) -> String {
+    TREE_KEYS
+        .iter()
+        .filter_map(|action| (action.hint)(app))
+        .collect::<Vec<_>>()
+        .join("   ")
 }
 
 fn handle_tree_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
@@ -773,70 +1075,18 @@ fn handle_tree_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Opt
         return None;
     }
 
-    if app.tree_quit_pending {
-        match code {
-            KeyCode::Char('q') => {
-                app.should_quit = true;
-                return None;
-            }
-            KeyCode::Esc => {
-                app.exit_tree_mode();
-                return None;
-            }
-            _ => {
-                app.tree_quit_pending = false;
-                app.confirm_deadline = None;
-                app.status.clear();
-                return None;
-            }
-        }
+    if let Some(result) = handle_pending_confirm(app, code) {
+        return result;
     }
 
-    if app.entries_delete_pending {
-        app.entries_delete_pending = false;
-        app.confirm_deadline = None;
-        if code == KeyCode::Char('d') {
-            return Some(Action::DeleteEntry);
-        }
-        app.status.clear();
-        return None;
+    if code == KeyCode::Char('s') && modifiers.contains(KeyModifiers::CONTROL) {
+        return Some(Action::SaveTree);
     }
 
-    match code {
-        KeyCode::Char('s') if modifiers.contains(KeyModifiers::CONTROL) => {
-            return Some(Action::SaveTree);
+    for action in TREE_KEYS {
+        if action.keys.contains(&code) {
+            return (action.handler)(app);
         }
-        KeyCode::Char('d') => {
-            app.entries_delete_pending = true;
-            app.arm_confirm();
-            app.status = "press d again to delete this entry, any other key to cancel".to_string();
-        }
-        KeyCode::Esc => {
-            if app.tree_dirty {
-                app.tree_quit_pending = true;
-                app.arm_confirm();
-                app.status =
-                    "unsaved changes — esc again discards, q quits, ctrl+s saves".to_string();
-            } else {
-                app.exit_tree_mode();
-            }
-        }
-        KeyCode::Up | KeyCode::Char('k') => app.tree_move(-1),
-        KeyCode::Down | KeyCode::Char('j') => app.tree_move(1),
-        KeyCode::Char(' ') => app.tree_toggle(),
-        KeyCode::Enter => app.tree_edit_leaf(),
-        KeyCode::Char('q') => {
-            if app.tree_dirty {
-                app.tree_quit_pending = true;
-                app.arm_confirm();
-                app.status =
-                    "unsaved changes — q again quits without saving, esc discards, ctrl+s saves"
-                        .to_string();
-            } else {
-                app.should_quit = true;
-            }
-        }
-        _ => {}
     }
     None
 }

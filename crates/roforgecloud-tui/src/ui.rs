@@ -237,7 +237,7 @@ fn draw_entries(frame: &mut Frame, app: &App, area: Rect) {
 
     let store_label = match app.universe_names.get(&app.universe_id) {
         Some(name) => format!(
-            "{} (universe {} / {name})",
+            "{} (universe {} ({name}))",
             app.data_store_id, app.universe_id
         ),
         None => app.data_store_id.clone(),
@@ -385,31 +385,47 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_keybinds(frame: &mut Frame, app: &App, area: Rect) {
+    if let Some(pending) = &app.pending_confirm {
+        let paragraph = Paragraph::new(Line::from(pending.footer_hint()))
+            .style(Style::default().fg(Color::DarkGray))
+            .block(Block::default().borders(Borders::ALL));
+        frame.render_widget(paragraph, area);
+        return;
+    }
+
+    const MOVE: &str = "↑/↓ or j/k: move";
+    const SCROLL: &str = "↑/↓ or j/k: scroll";
+    const BACK_QUIT: &str = "esc/h: back   q: quit";
+    const QUIT: &str = "q: quit";
+
     let binds = match app.screen {
-        Screen::Menu => "↑/↓ or j/k: move   enter/l: open   q: quit",
-        Screen::UniverseChoice => "↑/↓ or j/k: move   enter/l: select   esc/h: back   q: quit",
+        Screen::Menu => format!("{MOVE}   {}   {QUIT}", crate::menu_hints(app)),
+        Screen::UniverseChoice => {
+            format!("{MOVE}   {}   {BACK_QUIT}", crate::universe_choice_hints(app))
+        }
         Screen::UniverseSelect if app.universe_search_active => {
-            "type to search by id or name   enter/esc: confirm"
+            "type to search by id or name   enter/esc: confirm".to_string()
         }
         Screen::UniverseSelect => {
-            "↑/↓ or j/k: move   enter/l: select   /: search   esc/h: back   q: quit"
+            format!("{MOVE}   {}   {BACK_QUIT}", crate::universe_select_hints(app))
         }
-        Screen::UniverseInput => "type a universe id   enter: confirm   esc: back",
-        Screen::Stores => "↑/↓ or j/k: move   enter/l: open   space: select   a: select all   r: refresh   d d: delete (selected)   u u: undelete (selected)   D: toggle deleted   esc/h: back   q: quit",
+        Screen::UniverseInput => "type a universe id   enter: confirm   esc: back".to_string(),
+        Screen::Stores => format!("{MOVE}   {}   {BACK_QUIT}", crate::stores_hints(app)),
         Screen::Entries if app.entries_search_active => {
-            "type to search by id or username   enter/esc: confirm"
+            "type to search by id or username   enter/esc: confirm".to_string()
         }
-        Screen::Entries => "↑/↓ or j/k: move   enter/l: view   space: select   a: select all   n/p: next/prev page   r: refresh   /: search   d d: delete (selected)   esc/h: back   q: quit",
+        Screen::Entries => format!("{MOVE}   {}   {BACK_QUIT}", crate::entries_hints(app)),
         Screen::Value if app.tree_mode && app.tree_editing => {
-            "type to edit   enter: confirm   esc: cancel"
+            "type to edit   enter: confirm   esc: cancel".to_string()
         }
         Screen::Value if app.tree_mode => {
-            "↑/↓ or j/k: move   space: fold/unfold   enter: edit value   ctrl+s: save   d d: delete entry   esc: exit tree   q: quit"
+            format!("{MOVE}   {}   {QUIT}", crate::tree_hints(app))
         }
-        Screen::Value => {
-            "↑/↓ or j/k: scroll   pgup/pgdn: scroll x10   r: refresh   enter/l: tree edit   e: edit in $EDITOR   d d: delete   esc/h: back   q: quit"
-        }
-        Screen::Messaging => "tab: switch field   enter: publish   esc: back",
+        Screen::Value => format!(
+            "{SCROLL}   pgup/pgdn: scroll x10   {}   {BACK_QUIT}",
+            crate::value_hints(app)
+        ),
+        Screen::Messaging => "tab: switch field   enter: publish   esc: back".to_string(),
     };
     let paragraph = Paragraph::new(Line::from(binds))
         .style(Style::default().fg(Color::DarkGray))
