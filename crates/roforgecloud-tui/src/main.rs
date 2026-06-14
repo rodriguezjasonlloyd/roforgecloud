@@ -59,7 +59,7 @@ async fn main() -> anyhow::Result<()> {
     let _ = dotenvy::dotenv();
     let cli = Cli::parse();
 
-    let (client, oauth, available_universes, logged_in, username) = build_client(&cli).await?;
+    let (client, oauth, available_universes, logged_in) = build_client(&cli).await?;
 
     let mut stdout = io::stdout();
     enable_raw_mode()?;
@@ -75,7 +75,6 @@ async fn main() -> anyhow::Result<()> {
         cli.redirect_uri.clone(),
         available_universes,
         logged_in,
-        username,
     );
 
     let result = run(&mut terminal, &mut app).await;
@@ -89,13 +88,7 @@ async fn main() -> anyhow::Result<()> {
 
 async fn build_client(
     cli: &Cli,
-) -> anyhow::Result<(
-    OpenCloudClient,
-    Option<OAuthClient>,
-    Vec<u64>,
-    bool,
-    Option<String>,
-)> {
+) -> anyhow::Result<(OpenCloudClient, Option<OAuthClient>, Vec<u64>, bool)> {
     let oauth = auth::build_oauth_client(
         cli.client_id.clone(),
         cli.client_secret.clone(),
@@ -104,21 +97,15 @@ async fn build_client(
     )?;
 
     if let Some(api_key) = &cli.api_key {
-        let (logged_in, username) = login_state(&oauth).await;
         return Ok((
             OpenCloudClient::new(Credentials::ApiKey(api_key.clone())),
             Some(oauth),
             Vec::new(),
-            logged_in,
-            username,
+            auth::is_logged_in(),
         ));
     }
 
     let token = auth::access_token(&oauth, &cli.redirect_uri).await?;
-    let username = auth::userinfo(&token)
-        .await
-        .ok()
-        .and_then(|info| info.preferred_username.or(Some(info.sub)));
 
     let resources = oauth.token_resources(&token).await?;
     let available_universes = oauth::authorized_universe_ids(&resources);
@@ -128,24 +115,7 @@ async fn build_client(
         Some(oauth),
         available_universes,
         true,
-        username,
     ))
-}
-
-async fn login_state(oauth: &OAuthClient) -> (bool, Option<String>) {
-    if !auth::is_logged_in() {
-        return (false, None);
-    }
-
-    let username = match auth::cached_access_token(oauth).await {
-        Some(token) => auth::userinfo(&token)
-            .await
-            .ok()
-            .and_then(|info| info.preferred_username.or(Some(info.sub))),
-        None => None,
-    };
-
-    (true, username)
 }
 
 async fn run<B: ratatui::backend::Backend + io::Write>(
@@ -192,7 +162,18 @@ async fn run<B: ratatui::backend::Backend + io::Write>(
         if let Some(Action::EditValueExternal) = action {
             edit_value_external(terminal, app).await?;
         } else if let Some(Action::LoadUniverses) = action {
-            perform_with_terminal_suspended(terminal, app, Action::LoadUniverses).await?;
+            let needs_login = match &app.oauth {
+                Some(oauth) => auth::cached_access_token(oauth).await.is_none(),
+                None => false,
+            };
+            if needs_login {
+                perform_with_terminal_suspended(terminal, app, Action::LoadUniverses).await?;
+            } else {
+                app.loading = true;
+                terminal.draw(|frame| ui::draw(frame, app))?;
+                app.perform(Action::LoadUniverses).await;
+                app.loading = false;
+            }
         } else if let Some(Action::Login) = action {
             perform_with_terminal_suspended(terminal, app, Action::Login).await?;
         } else if let Some(action) = action {

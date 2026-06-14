@@ -7,19 +7,7 @@ use tokio::net::TcpListener;
 
 use crate::oauth::{OAuthClient, TokenResponseExt, TokenResponseType};
 
-const SCOPES: &[&str] = &[
-    "openid",
-    "profile",
-    "universe:read",
-    "universe-messaging-service:publish",
-];
-const USERINFO_URL: &str = "https://apis.roblox.com/oauth/v1/userinfo";
-
-#[derive(Debug, Deserialize)]
-pub struct UserInfo {
-    pub sub: String,
-    pub preferred_username: Option<String>,
-}
+const SCOPES: &[&str] = &["universe:read", "universe-messaging-service:publish"];
 
 #[derive(Debug, Serialize, Deserialize)]
 struct StoredToken {
@@ -70,20 +58,6 @@ pub async fn cached_access_token(oauth: &OAuthClient) -> Option<String> {
 
 pub fn is_logged_in() -> bool {
     load_cached_token().is_some()
-}
-
-pub async fn userinfo(access_token: &str) -> anyhow::Result<UserInfo> {
-    let response = reqwest::Client::new()
-        .get(USERINFO_URL)
-        .bearer_auth(access_token)
-        .send()
-        .await?;
-
-    if !response.status().is_success() {
-        anyhow::bail!("userinfo request failed: {}", response.status());
-    }
-
-    Ok(response.json().await?)
 }
 
 pub async fn force_login(oauth: &OAuthClient, redirect_uri: &str) -> anyhow::Result<String> {

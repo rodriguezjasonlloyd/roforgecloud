@@ -61,7 +61,6 @@ pub struct App {
     pub oauth: Option<OAuthClient>,
     pub redirect_uri: String,
     pub logged_in: bool,
-    pub username: Option<String>,
     pub universe_id: u64,
     pub universe_input: String,
     pub available_universes: Vec<u64>,
@@ -131,7 +130,6 @@ impl App {
         redirect_uri: String,
         available_universes: Vec<u64>,
         logged_in: bool,
-        username: Option<String>,
     ) -> Self {
         let menu_items = vec![
             ("Data Stores", SERVICE_DATA_STORES),
@@ -148,7 +146,6 @@ impl App {
             oauth,
             redirect_uri,
             logged_in,
-            username,
             universe_id: 0,
             universe_input: String::new(),
             available_universes,
@@ -239,12 +236,8 @@ impl App {
 
         self.status = "opening browser for login...".to_string();
         match auth::force_login(oauth, &self.redirect_uri).await {
-            Ok(token) => {
+            Ok(_) => {
                 self.logged_in = true;
-                self.username = auth::userinfo(&token)
-                    .await
-                    .ok()
-                    .and_then(|info| info.preferred_username.or(Some(info.sub)));
                 self.status = "logged in".to_string();
             }
             Err(err) => self.status = format!("error: {err}"),
@@ -262,7 +255,6 @@ impl App {
         match auth::logout(oauth).await {
             Ok(()) => {
                 self.logged_in = false;
-                self.username = None;
                 self.status = "logged out".to_string();
             }
             Err(err) => self.status = format!("error: {err}"),

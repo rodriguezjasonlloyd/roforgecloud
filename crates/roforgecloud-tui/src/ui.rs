@@ -47,10 +47,7 @@ fn draw_menu(frame: &mut Frame, app: &App, area: Rect) {
         .map(|(label, service)| {
             if *service == SERVICE_ACCOUNT {
                 if app.logged_in {
-                    match &app.username {
-                        Some(username) => ListItem::new(format!("Logout ({username})")),
-                        None => ListItem::new("Logout"),
-                    }
+                    ListItem::new("Logout")
                 } else {
                     ListItem::new("Login")
                 }
