@@ -8,7 +8,7 @@ members = [
 
 [workspace.package]
 edition = "2021"
-repository = "https://github.com/ohirume/roforgecloud"
+repository = "https://github.com/rodriguezjasonlloyd/roforgecloud"
 license = "MIT"
 
 [workspace.dependencies]
