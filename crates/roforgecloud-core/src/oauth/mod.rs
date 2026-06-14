@@ -13,7 +13,8 @@ const TOKEN_URL: &str = "https://apis.roblox.com/oauth/v1/token";
 const RESOURCES_URL: &str = "https://apis.roblox.com/oauth/v1/token/resources";
 const REVOKE_URL: &str = "https://apis.roblox.com/oauth/v1/token/revoke";
 
-pub const DEFAULT_RELAY_URL: &str = "https://roforgecloud-oauth-relay.amaterxsu.workers.dev";
+pub const DEFAULT_RELAY_URL: &str = "https://roforgecloud.ohirume.xyz";
+pub const DEFAULT_CLIENT_ID: &str = "1394680015364443315";
 
 type RobloxOAuthClient =
     BasicClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointSet>;

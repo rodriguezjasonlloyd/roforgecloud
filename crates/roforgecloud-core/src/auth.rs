@@ -1,12 +1,25 @@
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use roforgecloud_core::oauth::{OAuthClient, TokenResponseExt, TokenResponseType};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 
-const SCOPES: &[&str] = &["universe:read", "universe-messaging-service:publish"];
+use crate::oauth::{OAuthClient, TokenResponseExt, TokenResponseType};
+
+const SCOPES: &[&str] = &[
+    "openid",
+    "profile",
+    "universe:read",
+    "universe-messaging-service:publish",
+];
+const USERINFO_URL: &str = "https://apis.roblox.com/oauth/v1/userinfo";
+
+#[derive(Debug, Deserialize)]
+pub struct UserInfo {
+    pub sub: String,
+    pub preferred_username: Option<String>,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 struct StoredToken {
@@ -15,24 +28,65 @@ struct StoredToken {
     expires_at: Option<u64>,
 }
 
-pub async fn access_token(oauth: &OAuthClient, redirect_uri: &str) -> anyhow::Result<String> {
-    if let Some(cached) = load_cached_token() {
-        if !is_expired(&cached) {
-            return Ok(cached.access_token);
-        }
+pub fn build_oauth_client(
+    client_id: impl Into<String>,
+    client_secret: Option<String>,
+    relay_url: &str,
+    redirect_uri: &str,
+) -> anyhow::Result<OAuthClient> {
+    let has_secret = client_secret.is_some();
+    let oauth = OAuthClient::new(client_id, client_secret.unwrap_or_default(), redirect_uri)?;
+    let oauth = if !has_secret && !relay_url.is_empty() {
+        oauth.with_relay(relay_url)?
+    } else {
+        oauth
+    };
+    Ok(oauth)
+}
 
-        if let Some(refresh_token) = &cached.refresh_token {
-            if let Ok(response) = oauth.refresh(refresh_token).await {
-                let mut stored = stored_token_from_response(&response);
-                if stored.refresh_token.is_none() {
-                    stored.refresh_token = Some(refresh_token.clone());
-                }
-                save_token(&stored)?;
-                return Ok(stored.access_token);
-            }
-        }
+pub async fn access_token(oauth: &OAuthClient, redirect_uri: &str) -> anyhow::Result<String> {
+    if let Some(token) = cached_access_token(oauth).await {
+        return Ok(token);
     }
 
+    force_login(oauth, redirect_uri).await
+}
+
+pub async fn cached_access_token(oauth: &OAuthClient) -> Option<String> {
+    let cached = load_cached_token()?;
+    if !is_expired(&cached) {
+        return Some(cached.access_token);
+    }
+
+    let refresh_token = cached.refresh_token?;
+    let response = oauth.refresh(&refresh_token).await.ok()?;
+    let mut stored = stored_token_from_response(&response);
+    if stored.refresh_token.is_none() {
+        stored.refresh_token = Some(refresh_token);
+    }
+    save_token(&stored).ok()?;
+    Some(stored.access_token)
+}
+
+pub fn is_logged_in() -> bool {
+    load_cached_token().is_some()
+}
+
+pub async fn userinfo(access_token: &str) -> anyhow::Result<UserInfo> {
+    let response = reqwest::Client::new()
+        .get(USERINFO_URL)
+        .bearer_auth(access_token)
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        anyhow::bail!("userinfo request failed: {}", response.status());
+    }
+
+    Ok(response.json().await?)
+}
+
+pub async fn force_login(oauth: &OAuthClient, redirect_uri: &str) -> anyhow::Result<String> {
     let response = login(oauth, redirect_uri).await?;
     let stored = stored_token_from_response(&response);
     save_token(&stored)?;
