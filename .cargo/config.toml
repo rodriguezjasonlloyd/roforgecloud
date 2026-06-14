@@ -1,0 +1,6 @@
+[alias]
+b-tui = "build -rp roforgecloud-tui"
+b-cli = "build -rp roforgecloud-cli"
+b-core = "build -rp roforgecloud-core"
+r-tui = "run -rp roforgecloud-tui"
+r-cli = "run -rp roforgecloud-cli"
