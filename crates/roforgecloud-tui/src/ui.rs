@@ -422,7 +422,7 @@ fn draw_memory_entries(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_memory_create_popup(frame: &mut Frame, app: &App, area: Rect) {
-    if app.tree_mode && app.tree_target == TreeTarget::MemoryCreate {
+    if app.tree_editor.is_some() && app.tree_target == TreeTarget::MemoryCreate {
         let popup = centered_rect(80, 80, area);
         frame.render_widget(Clear, popup);
         draw_tree(frame, app, popup);
@@ -615,7 +615,7 @@ fn draw_entries(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_entries_create_popup(frame: &mut Frame, app: &App, area: Rect) {
-    if app.tree_mode && app.tree_target == TreeTarget::EntriesCreate {
+    if app.tree_editor.is_some() && app.tree_target == TreeTarget::EntriesCreate {
         let popup = centered_rect(80, 80, area);
         frame.render_widget(Clear, popup);
         draw_tree(frame, app, popup);
@@ -648,7 +648,7 @@ fn draw_entries_create_popup(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_value(frame: &mut Frame, app: &App, area: Rect) {
-    if app.tree_mode {
+    if app.tree_editor.is_some() {
         draw_tree(frame, app, area);
         return;
     }
@@ -680,10 +680,10 @@ fn scalar_style(preview: &str) -> Style {
 }
 
 fn draw_tree(frame: &mut Frame, app: &App, area: Rect) {
-    let Some(tree) = &app.value_tree else {
+    let Some(editor) = &app.tree_editor else {
         return;
     };
-    let rows = json_tree::flatten(tree);
+    let rows = json_tree::flatten(editor.root());
 
     let mut edit_cursor_col = 0u16;
 
@@ -704,8 +704,8 @@ fn draw_tree(frame: &mut Frame, app: &App, area: Rect) {
                 spans.push(Span::raw("  "));
             }
 
-            if i == app.tree_cursor && app.tree_editing_key {
-                let field = &app.tree_edit_key;
+            if i == editor.cursor() && editor.editing_key() {
+                let field = editor.edit_key();
                 let prefix_width: usize = spans.iter().map(|s| s.content.chars().count()).sum();
                 let cursor_idx = field.value[..field.cursor].chars().count();
                 edit_cursor_col = (prefix_width + 1 + cursor_idx) as u16;
@@ -720,13 +720,8 @@ fn draw_tree(frame: &mut Frame, app: &App, area: Rect) {
                 ));
             }
 
-            if i == app.tree_cursor && app.tree_editing {
-                let field = &app.tree_edit_text;
-                let prefix_width: usize = spans.iter().map(|s| s.content.chars().count()).sum();
-                let cursor_idx = field.value[..field.cursor].chars().count();
-                edit_cursor_col = (prefix_width + cursor_idx) as u16;
-                let style = Style::new().bg(Color::Rgb(50, 50, 50)).fg(Color::Yellow);
-                spans.push(Span::styled(field.value.clone(), style));
+            if i == editor.cursor() && editor.editing() {
+                // value rendered via TextArea overlay below
             } else {
                 spans.push(Span::styled(
                     row.preview.clone(),
@@ -738,7 +733,7 @@ fn draw_tree(frame: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let editing = app.tree_editing || app.tree_editing_key;
+    let editing = editor.is_editing();
 
     let title_base = match app.tree_target {
         TreeTarget::Value => app.value_title.clone(),
@@ -759,20 +754,36 @@ fn draw_tree(frame: &mut Frame, app: &App, area: Rect) {
         state.select(None);
         let visible_height = area.height.saturating_sub(2) as usize;
         let max_offset = rows.len().saturating_sub(visible_height);
-        *state.offset_mut() = app
-            .tree_cursor
+        *state.offset_mut() = editor
+            .cursor()
             .saturating_sub(visible_height / 2)
             .min(max_offset);
     } else {
-        state.select(Some(app.tree_cursor));
+        state.select(Some(editor.cursor()));
     }
     frame.render_stateful_widget(list, area, &mut state);
 
-    if editing {
+    if editor.editing_key() {
         let inner = Block::default().borders(Borders::ALL).inner(area);
-        let row_y = app.tree_cursor.saturating_sub(state.offset());
+        let row_y = editor.cursor().saturating_sub(state.offset());
         if row_y < inner.height as usize {
             frame.set_cursor_position((inner.x + edit_cursor_col, inner.y + row_y as u16));
+        }
+    } else if editor.editing() {
+        let inner = Block::default().borders(Borders::ALL).inner(area);
+        let row_y = editor.cursor().saturating_sub(state.offset());
+        if row_y < inner.height as usize {
+            let textarea = editor.edit_text();
+            let lines = textarea.lines().len().max(1) as u16;
+            let height = lines.min(inner.height.saturating_sub(row_y as u16));
+            let overlay = Rect {
+                x: inner.x,
+                y: inner.y + row_y as u16,
+                width: inner.width,
+                height,
+            };
+            frame.render_widget(Clear, overlay);
+            frame.render_widget(textarea, overlay);
         }
     }
 }
@@ -804,11 +815,11 @@ const BACK_QUIT: &str = "esc/h: back   q: quit";
 
 fn screen_binds(app: &App) -> String {
     match app.screen {
-        Screen::Menu => format!("{MOVE}   {}   {QUIT}", crate::menu_hints(app)),
+        Screen::Menu => format!("{MOVE}   {}   {QUIT}", crate::update::menu_hints(app)),
         Screen::UniverseChoice => {
             format!(
                 "{MOVE}   {}   {BACK_QUIT}",
-                crate::universe_choice_hints(app)
+                crate::update::universe_choice_hints(app)
             )
         }
         Screen::UniverseSelect if app.universe_search_active => {
@@ -817,38 +828,38 @@ fn screen_binds(app: &App) -> String {
         Screen::UniverseSelect => {
             format!(
                 "{MOVE}   {}   {BACK_QUIT}",
-                crate::universe_select_hints(app)
+                crate::update::universe_select_hints(app)
             )
         }
         Screen::UniverseInput => "type a universe id   enter: confirm   esc: back".to_string(),
         Screen::Stores if app.stores_new_active => {
             "type a data store id   enter: continue   esc: cancel".to_string()
         }
-        Screen::Stores => format!("{MOVE}   {}   {BACK_QUIT}", crate::stores_hints(app)),
+        Screen::Stores => format!("{MOVE}   {}   {BACK_QUIT}", crate::update::stores_hints(app)),
         Screen::Entries if app.entries_search_active => {
             "type to search by id or username   enter/esc: confirm".to_string()
         }
-        Screen::Entries if app.tree_mode && (app.tree_editing || app.tree_editing_key) => {
+        Screen::Entries if app.tree_editor.as_ref().is_some_and(|t| t.is_editing()) => {
             "type to edit   enter: confirm   esc: cancel".to_string()
         }
-        Screen::Entries if app.tree_mode => format!("{MOVE}   {}", crate::tree_hints(app)),
+        Screen::Entries if app.tree_editor.is_some() => format!("{MOVE}   {}", crate::update::tree_hints(app)),
         Screen::Entries if app.entries_create_choosing => {
             "n: form   e: $EDITOR   esc: cancel".to_string()
         }
-        Screen::Entries if app.entries_create_active => crate::entries_create_hints(app),
-        Screen::Entries => format!("{MOVE}   {}   {BACK_QUIT}", crate::entries_hints(app)),
-        Screen::Value if app.tree_mode && (app.tree_editing || app.tree_editing_key) => {
+        Screen::Entries if app.entries_create_active => crate::update::entries_create_hints(app),
+        Screen::Entries => format!("{MOVE}   {}   {BACK_QUIT}", crate::update::entries_hints(app)),
+        Screen::Value if app.tree_editor.as_ref().is_some_and(|t| t.is_editing()) => {
             "type to edit   enter: confirm   esc: cancel".to_string()
         }
-        Screen::Value if app.tree_mode => {
-            format!("{MOVE}   {}", crate::tree_hints(app))
+        Screen::Value if app.tree_editor.is_some() => {
+            format!("{MOVE}   {}", crate::update::tree_hints(app))
         }
         Screen::Value if app.memory_ttl_editing => {
             "type ttl seconds   enter: confirm   esc: cancel".to_string()
         }
         Screen::Value => format!(
             "{SCROLL}   pgup/pgdn: scroll x10   {}   {BACK_QUIT}",
-            crate::value_hints(app)
+            crate::update::value_hints(app)
         ),
         Screen::Messaging => "tab: switch field   enter: publish   esc: back".to_string(),
         Screen::OrderedStoreInput => "tab: switch field   enter: confirm   esc: back".to_string(),
@@ -864,7 +875,7 @@ fn screen_binds(app: &App) -> String {
         Screen::OrderedEntries => {
             format!(
                 "{MOVE}   {}   {BACK_QUIT}",
-                crate::ordered_entries_hints(app)
+                crate::update::ordered_entries_hints(app)
             )
         }
         Screen::OrderedValue if app.ordered_value_editing => {
@@ -873,30 +884,30 @@ fn screen_binds(app: &App) -> String {
         Screen::OrderedValue if app.ordered_increment_editing => {
             "type amount   enter: confirm   esc: cancel".to_string()
         }
-        Screen::OrderedValue => format!("{}   {BACK_QUIT}", crate::ordered_value_hints(app)),
-        Screen::MemoryStoreInput => crate::memory_store_input_hints(app),
+        Screen::OrderedValue => format!("{}   {BACK_QUIT}", crate::update::ordered_value_hints(app)),
+        Screen::MemoryStoreInput => crate::update::memory_store_input_hints(app),
         Screen::MemoryStoreEntries if app.memory_items_search_active => {
             "type to search by id   enter/esc: confirm".to_string()
         }
         Screen::MemoryStoreEntries
-            if app.tree_mode && (app.tree_editing || app.tree_editing_key) =>
+            if app.tree_editor.as_ref().is_some_and(|t| t.is_editing()) =>
         {
             "type to edit   enter: confirm   esc: cancel".to_string()
         }
-        Screen::MemoryStoreEntries if app.tree_mode => {
-            format!("{MOVE}   {}", crate::tree_hints(app))
+        Screen::MemoryStoreEntries if app.tree_editor.is_some() => {
+            format!("{MOVE}   {}", crate::update::tree_hints(app))
         }
         Screen::MemoryStoreEntries if app.memory_create_choosing => {
             "n: form   e: $EDITOR   esc: cancel".to_string()
         }
-        Screen::MemoryStoreEntries if app.memory_create_active => crate::memory_create_hints(app),
+        Screen::MemoryStoreEntries if app.memory_create_active => crate::update::memory_create_hints(app),
         Screen::MemoryStoreEntries if app.memory_ttl_editing => {
             "type ttl seconds   enter: confirm   esc: cancel".to_string()
         }
         Screen::MemoryStoreEntries => {
             format!(
                 "{MOVE}   {}   {BACK_QUIT}",
-                crate::memory_entries_hints(app)
+                crate::update::memory_entries_hints(app)
             )
         }
     }
@@ -911,7 +922,7 @@ fn draw_keybinds(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    if app.tree_pending_leader {
+    if app.tree_editor.as_ref().is_some_and(|t| t.pending_leader()) {
         let paragraph = Paragraph::new(Line::from(
             "v: edit value   k: edit key   e: edit in $EDITOR   any other key: cancel",
         ))

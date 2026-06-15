@@ -3,9 +3,9 @@ use roforgecloud_core::oauth::{self, OAuthClient};
 use roforgecloud_core::opencloud::datastore::{DataStoreEntryInfo, DataStoreInfo};
 use roforgecloud_core::opencloud::memory_store::SortedMapItem;
 use roforgecloud_core::opencloud::ordered_datastore::OrderedDataStoreEntry;
-use roforgecloud_core::opencloud::OpenCloudClient;
+use roforgecloud_core::opencloud::{ListQuery, OpenCloudClient};
 
-use crate::json_tree::{flatten, JsonNode, JsonNodeValue};
+use crate::tree_editor::TreeEditor;
 use crate::userlookup;
 
 #[derive(Debug, Clone, Default)]
@@ -296,17 +296,9 @@ pub struct App {
     pub value_viewport_height: u16,
     pub value_edit_text: String,
 
-    pub tree_mode: bool,
-    pub value_tree: Option<JsonNode>,
-    pub tree_cursor: usize,
-    pub tree_editing: bool,
-    pub tree_edit_text: TextField,
-    pub tree_editing_key: bool,
-    pub tree_edit_key: TextField,
-    pub tree_adding: bool,
-    pub tree_pending_leader: bool,
-    pub tree_dirty: bool,
+    pub tree_editor: Option<TreeEditor>,
     pub tree_target: TreeTarget,
+    pub clipboard: Option<arboard::Clipboard>,
 
     pub messaging_topic: TextField,
     pub messaging_message: TextField,
@@ -438,17 +430,9 @@ impl App {
             value_scroll: 0,
             value_viewport_height: 0,
             value_edit_text: String::new(),
-            tree_mode: false,
-            value_tree: None,
-            tree_cursor: 0,
-            tree_editing: false,
-            tree_edit_text: TextField::default(),
-            tree_editing_key: false,
-            tree_edit_key: TextField::default(),
-            tree_adding: false,
-            tree_pending_leader: false,
-            tree_dirty: false,
+            tree_editor: None,
             tree_target: TreeTarget::Value,
+            clipboard: arboard::Clipboard::new().ok(),
             messaging_topic: TextField::default(),
             messaging_message: TextField::default(),
             messaging_field: MessagingField::Topic,
@@ -565,7 +549,7 @@ impl App {
         };
 
         self.status = "opening browser for login...".to_string();
-        match auth::force_login(oauth, &self.redirect_uri).await {
+        match auth::force_login(oauth, &self.redirect_uri, &auth::NoopLoginPrompt).await {
             Ok(_) => {
                 self.logged_in = true;
                 self.status = "logged in".to_string();
@@ -601,7 +585,7 @@ impl App {
 
         self.status = "fetching authorized universes...".to_string();
         let result = async {
-            let token = auth::access_token(oauth, &self.redirect_uri).await?;
+            let token = auth::access_token(oauth, &self.redirect_uri, &auth::NoopLoginPrompt).await?;
             let resources = oauth.token_resources(&token).await?;
             anyhow::Ok(oauth::authorized_universe_ids(&resources))
         }
@@ -646,7 +630,13 @@ impl App {
         self.status = "loading data stores...".to_string();
         match self
             .client
-            .list_data_stores(self.universe_id, None, None, true)
+            .list_data_stores(
+                self.universe_id,
+                &ListQuery {
+                    show_deleted: true,
+                    ..Default::default()
+                },
+            )
             .await
         {
             Ok(result) => {
@@ -785,9 +775,11 @@ impl App {
                 self.universe_id,
                 &self.data_store_id,
                 None,
-                None,
-                page_token.as_deref(),
-                Some(256),
+                &ListQuery {
+                    page_token: page_token.as_deref(),
+                    max_page_size: Some(256),
+                    ..Default::default()
+                },
             )
             .await
         {
@@ -817,9 +809,11 @@ impl App {
                     self.universe_id,
                     &self.data_store_id,
                     None,
-                    None,
-                    page_token.as_deref(),
-                    Some(256),
+                    &ListQuery {
+                        page_token: page_token.as_deref(),
+                        max_page_size: Some(256),
+                        ..Default::default()
+                    },
                 )
                 .await
             {
@@ -952,7 +946,7 @@ impl App {
                     || self.entries_create_choosing
             }
             Screen::Value => {
-                self.tree_mode && (self.tree_editing || self.tree_editing_key)
+                self.tree_editor.as_ref().is_some_and(|t| t.is_editing())
                     || self.memory_ttl_editing
             }
             Screen::OrderedEntries => {
@@ -1071,8 +1065,7 @@ impl App {
                 self.value_text = serde_json::to_string_pretty(&value).unwrap_or_default();
                 self.value_revision = revision;
                 self.value_scroll = 0;
-                self.tree_mode = false;
-                self.value_tree = None;
+                self.tree_editor = None;
                 self.value_source = ValueSource::DataStore;
                 self.status.clear();
             }
@@ -1097,14 +1090,8 @@ impl App {
 
         match serde_json::from_str::<serde_json::Value>(source) {
             Ok(value) => {
-                let mut tree = JsonNode::from_value(&value);
-                tree.collapse_below_root();
-                self.value_tree = Some(tree);
-                self.tree_mode = true;
+                self.tree_editor = Some(TreeEditor::new(&value));
                 self.tree_target = target;
-                self.tree_cursor = 0;
-                self.tree_editing = false;
-                self.tree_dirty = false;
                 self.pending_confirm = None;
                 self.status.clear();
             }
@@ -1115,310 +1102,34 @@ impl App {
     }
 
     pub fn exit_tree_mode(&mut self) {
-        self.tree_mode = false;
-        self.tree_editing = false;
+        self.tree_editor = None;
         self.pending_confirm = None;
-        self.value_tree = None;
         self.status.clear();
-    }
-
-    pub fn tree_move(&mut self, delta: isize) {
-        let Some(tree) = &self.value_tree else {
-            return;
-        };
-        let len = flatten(tree).len();
-        if len == 0 {
-            return;
-        }
-        let cursor = self.tree_cursor as isize + delta;
-        self.tree_cursor = cursor.clamp(0, len as isize - 1) as usize;
-    }
-
-    pub fn tree_toggle(&mut self) {
-        let Some(tree) = &mut self.value_tree else {
-            return;
-        };
-        let rows = flatten(tree);
-        let Some(current) = rows.get(self.tree_cursor) else {
-            return;
-        };
-
-        if !current.is_closing && !current.is_container {
-            return;
-        }
-        let path = current.path.clone();
-
-        if let Some(node) = tree.get_mut(&path) {
-            node.collapsed = !node.collapsed;
-        }
-
-        if current.is_closing {
-            let rows = flatten(self.value_tree.as_ref().unwrap());
-            if let Some(idx) = rows
-                .iter()
-                .position(|r| r.path == path && r.is_container && !r.is_closing)
-            {
-                self.tree_cursor = idx;
-            }
-        }
-    }
-
-    pub fn tree_edit_leaf(&mut self) {
-        let Some(tree) = &self.value_tree else {
-            return;
-        };
-        let rows = flatten(tree);
-        let Some(current) = rows.get(self.tree_cursor) else {
-            return;
-        };
-
-        if current.is_leaf {
-            self.tree_edit_text.set(current.preview.clone());
-            self.tree_editing = true;
-        }
-    }
-
-    pub fn tree_confirm_edit(&mut self) {
-        let Some(tree) = &mut self.value_tree else {
-            return;
-        };
-        let rows = flatten(tree);
-        let Some(current) = rows.get(self.tree_cursor) else {
-            self.tree_editing = false;
-            return;
-        };
-
-        let value = serde_json::from_str::<serde_json::Value>(&self.tree_edit_text.value)
-            .unwrap_or_else(|_| serde_json::Value::String(self.tree_edit_text.value.clone()));
-
-        if let Some(node) = tree.get_mut(&current.path) {
-            node.value = JsonNodeValue::Leaf(value);
-        }
-        self.tree_editing = false;
-        self.tree_edit_text.clear();
-        self.tree_dirty = true;
-        self.tree_adding = false;
-    }
-
-    pub fn tree_current_value(&self) -> Option<serde_json::Value> {
-        let tree = self.value_tree.as_ref()?;
-        let rows = flatten(tree);
-        let current = rows.get(self.tree_cursor)?;
-        Some(tree.get(&current.path)?.to_value())
-    }
-
-    pub fn tree_replace_value(&mut self, key: Option<String>, value: serde_json::Value) {
-        let Some(tree) = &mut self.value_tree else {
-            return;
-        };
-        let rows = flatten(tree);
-        let Some(current) = rows.get(self.tree_cursor) else {
-            return;
-        };
-        let path = current.path.clone();
-        if let Some(node) = tree.get_mut(&path) {
-            let mut new_node = JsonNode::from_value(&value);
-            new_node.collapse_below_root();
-            new_node.key = key.or_else(|| node.key.clone());
-            *node = new_node;
-        }
-        self.tree_dirty = true;
-        let len = flatten(self.value_tree.as_ref().unwrap()).len();
-        if self.tree_cursor >= len {
-            self.tree_cursor = len.saturating_sub(1);
-        }
-    }
-
-    pub fn tree_cancel_edit(&mut self) {
-        self.tree_editing = false;
-        self.tree_editing_key = false;
-        self.tree_edit_text.clear();
-        self.tree_edit_key.clear();
-        if self.tree_adding {
-            self.tree_remove_current();
-            self.tree_adding = false;
-        }
-        self.status.clear();
-    }
-
-    pub fn tree_add_entry(&mut self) {
-        let Some(tree) = &mut self.value_tree else {
-            return;
-        };
-        let rows = flatten(tree);
-        let Some(current) = rows.get(self.tree_cursor) else {
-            return;
-        };
-
-        let expanded_container = current.is_container
-            && !current.is_closing
-            && !tree.get_mut(&current.path).is_some_and(|n| n.collapsed);
-
-        let (parent_path, insert_index) = if expanded_container {
-            (current.path.clone(), 0)
-        } else if current.path.is_empty() {
-            (Vec::new(), 0)
-        } else {
-            let mut parent_path = current.path.clone();
-            let idx = parent_path.pop().unwrap();
-            (parent_path, idx + 1)
-        };
-
-        let Some(parent) = tree.get_mut(&parent_path) else {
-            return;
-        };
-        parent.collapsed = false;
-        let is_object = matches!(parent.value, JsonNodeValue::Object(_));
-        let items = match &mut parent.value {
-            JsonNodeValue::Array(items) | JsonNodeValue::Object(items) => items,
-            JsonNodeValue::Leaf(_) => return,
-        };
-        let insert_index = insert_index.min(items.len());
-
-        if is_object {
-            items.insert(
-                insert_index,
-                JsonNode {
-                    key: Some(String::new()),
-                    value: JsonNodeValue::Leaf(serde_json::Value::Null),
-                    collapsed: false,
-                },
-            );
-            self.tree_edit_key.clear();
-            self.tree_editing_key = true;
-        } else {
-            items.insert(
-                insert_index,
-                JsonNode {
-                    key: None,
-                    value: JsonNodeValue::Leaf(serde_json::Value::String(String::new())),
-                    collapsed: false,
-                },
-            );
-            self.tree_edit_text.clear();
-            self.tree_editing = true;
-        }
-
-        self.tree_adding = true;
-        self.tree_dirty = true;
-
-        let mut new_path = parent_path;
-        new_path.push(insert_index);
-        let rows = flatten(tree);
-        if let Some(idx) = rows
-            .iter()
-            .position(|r| r.path == new_path && !r.is_closing)
-        {
-            self.tree_cursor = idx;
-        }
-    }
-
-    pub fn tree_edit_key_start(&mut self) {
-        let Some(tree) = &self.value_tree else {
-            return;
-        };
-        let rows = flatten(tree);
-        let Some(current) = rows.get(self.tree_cursor) else {
-            return;
-        };
-        let Some(key) = &current.key else {
-            return;
-        };
-        self.tree_edit_key.set(key.clone());
-        self.tree_editing_key = true;
-    }
-
-    pub fn tree_confirm_key(&mut self) {
-        let Some(tree) = &mut self.value_tree else {
-            return;
-        };
-        let rows = flatten(tree);
-        let Some(current) = rows.get(self.tree_cursor) else {
-            return;
-        };
-        let path = current.path.clone();
-        if let Some(node) = tree.get_mut(&path) {
-            node.key = Some(self.tree_edit_key.value.clone());
-        }
-        self.tree_editing_key = false;
-        self.tree_edit_key.clear();
-        self.tree_dirty = true;
-        if self.tree_adding {
-            self.tree_editing = true;
-        }
-    }
-
-    fn tree_remove_current(&mut self) {
-        let Some(tree) = &mut self.value_tree else {
-            return;
-        };
-        let rows = flatten(tree);
-        let Some(current) = rows.get(self.tree_cursor) else {
-            return;
-        };
-        let mut path = current.path.clone();
-        if path.is_empty() {
-            return;
-        }
-        let idx = path.pop().unwrap();
-        if let Some(parent) = tree.get_mut(&path) {
-            match &mut parent.value {
-                JsonNodeValue::Array(items) | JsonNodeValue::Object(items) => {
-                    if idx < items.len() {
-                        items.remove(idx);
-                    }
-                }
-                JsonNodeValue::Leaf(_) => {}
-            }
-        }
-        let len = flatten(tree).len();
-        if self.tree_cursor >= len {
-            self.tree_cursor = len.saturating_sub(1);
-        }
-    }
-
-    pub fn tree_delete_current(&mut self) {
-        let Some(tree) = &self.value_tree else {
-            return;
-        };
-        let rows = flatten(tree);
-        let Some(current) = rows.get(self.tree_cursor) else {
-            return;
-        };
-        if current.path.is_empty() {
-            return;
-        }
-        self.tree_remove_current();
-        self.tree_dirty = true;
     }
 
     pub async fn refresh_tree(&mut self) {
+        let cursor = self.tree_editor.as_ref().map(|t| t.cursor()).unwrap_or(0);
         self.load_value().await;
         if self.status.is_empty() {
             self.enter_tree_mode();
-            if let Some(tree) = &self.value_tree {
-                let len = flatten(tree).len();
-                self.tree_cursor = self.tree_cursor.min(len.saturating_sub(1));
+            if let Some(editor) = &mut self.tree_editor {
+                editor.set_cursor(cursor);
             }
         }
     }
 
     pub async fn save_tree(&mut self) {
-        let Some(tree) = &self.value_tree else {
+        let Some(editor) = &self.tree_editor else {
             return;
         };
-        let json = serde_json::to_string_pretty(&tree.to_value()).unwrap_or_default();
+        let json = serde_json::to_string_pretty(&editor.to_value()).unwrap_or_default();
 
         match self.tree_target {
             TreeTarget::Value => {
                 self.value_edit_text = json;
                 self.save_value().await;
                 if let Ok(value) = serde_json::from_str::<serde_json::Value>(&self.value_text) {
-                    let mut tree = JsonNode::from_value(&value);
-                    tree.collapse_below_root();
-                    self.value_tree = Some(tree);
-                    self.tree_mode = true;
-                    self.tree_dirty = false;
+                    self.tree_editor = Some(TreeEditor::new(&value));
                     self.pending_confirm = None;
                 }
             }
@@ -1687,10 +1398,11 @@ impl App {
                 self.universe_id,
                 &self.ordered_data_store_id.value,
                 &self.ordered_scope.value,
-                None,
-                None,
-                page_token.as_deref(),
-                Some(256),
+                &ListQuery {
+                    page_token: page_token.as_deref(),
+                    max_page_size: Some(256),
+                    ..Default::default()
+                },
             )
             .await
         {
@@ -1719,10 +1431,11 @@ impl App {
                     self.universe_id,
                     &self.ordered_data_store_id.value,
                     &self.ordered_scope.value,
-                    None,
-                    None,
-                    page_token.as_deref(),
-                    Some(256),
+                    &ListQuery {
+                        page_token: page_token.as_deref(),
+                        max_page_size: Some(256),
+                        ..Default::default()
+                    },
                 )
                 .await
             {
@@ -2078,8 +1791,11 @@ impl App {
             .list_sorted_map_items(
                 self.universe_id,
                 &self.memory_sorted_map_id,
-                page_token.as_deref(),
-                Some(256),
+                &ListQuery {
+                    page_token: page_token.as_deref(),
+                    max_page_size: Some(256),
+                    ..Default::default()
+                },
             )
             .await
         {
@@ -2108,8 +1824,11 @@ impl App {
                 .list_sorted_map_items(
                     self.universe_id,
                     &self.memory_sorted_map_id,
-                    page_token.as_deref(),
-                    Some(256),
+                    &ListQuery {
+                        page_token: page_token.as_deref(),
+                        max_page_size: Some(256),
+                        ..Default::default()
+                    },
                 )
                 .await
             {
@@ -2195,8 +1914,7 @@ impl App {
                 self.value_text = serde_json::to_string_pretty(&item.value).unwrap_or_default();
                 self.value_revision = item.etag;
                 self.value_scroll = 0;
-                self.tree_mode = false;
-                self.value_tree = None;
+                self.tree_editor = None;
                 self.value_source = ValueSource::MemoryStoreSortedMap;
                 self.memory_item_editing_id = id;
                 self.memory_item_ttl_seconds = 3600;
