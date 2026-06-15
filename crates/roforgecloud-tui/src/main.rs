@@ -151,7 +151,10 @@ async fn run<B: ratatui::backend::Backend + io::Write>(
         }
 
         if app.show_help {
-            if matches!(key.code, KeyCode::Char('?') | KeyCode::Esc | KeyCode::Char('q')) {
+            if matches!(
+                key.code,
+                KeyCode::Char('?') | KeyCode::Esc | KeyCode::Char('q')
+            ) {
                 app.show_help = false;
             }
             continue;
@@ -348,11 +351,18 @@ async fn create_entry_external<B: ratatui::backend::Backend + io::Write>(
             return Ok(());
         }
     };
-    let Some(id) = parsed.get("id").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) else {
+    let Some(id) = parsed
+        .get("id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+    else {
         app.status = "error: \"id\" field must be a non-empty string".to_string();
         return Ok(());
     };
-    let value = parsed.get("value").cloned().unwrap_or(serde_json::Value::Null);
+    let value = parsed
+        .get("value")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
 
     app.entries_create_id.set(id);
     app.entries_create_value.set(serde_json::to_string(&value)?);
@@ -382,7 +392,11 @@ async fn create_ordered_entry_external<B: ratatui::backend::Backend + io::Write>
             return Ok(());
         }
     };
-    let Some(id) = parsed.get("id").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) else {
+    let Some(id) = parsed
+        .get("id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+    else {
         app.status = "error: \"id\" field must be a non-empty string".to_string();
         return Ok(());
     };
@@ -419,11 +433,18 @@ async fn create_memory_item_external<B: ratatui::backend::Backend + io::Write>(
             return Ok(());
         }
     };
-    let Some(id) = parsed.get("id").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) else {
+    let Some(id) = parsed
+        .get("id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+    else {
         app.status = "error: \"id\" field must be a non-empty string".to_string();
         return Ok(());
     };
-    let value = parsed.get("value").cloned().unwrap_or(serde_json::Value::Null);
+    let value = parsed
+        .get("value")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
     let ttl = parsed.get("ttl").and_then(|v| v.as_u64()).unwrap_or(3600);
 
     app.memory_create_id.set(id);
@@ -503,7 +524,11 @@ fn move_down(selected: &mut usize, len: usize) {
     }
 }
 
-fn handle_text_field_key(field: &mut TextField, code: KeyCode, accept: impl Fn(char) -> bool) -> bool {
+fn handle_text_field_key(
+    field: &mut TextField,
+    code: KeyCode,
+    accept: impl Fn(char) -> bool,
+) -> bool {
     match code {
         KeyCode::Char(c) if accept(c) => {
             field.insert(c);
@@ -585,7 +610,9 @@ fn handle_pending_confirm(app: &mut App, code: KeyCode) -> Option<Option<Action>
         (PendingConfirm::BulkDeleteOrderedEntries, KeyCode::Char('d')) => {
             Some(Some(Action::BulkDeleteOrderedEntries))
         }
-        (PendingConfirm::DeleteMemoryItem, KeyCode::Char('d')) => Some(Some(Action::DeleteMemoryItem)),
+        (PendingConfirm::DeleteMemoryItem, KeyCode::Char('d')) => {
+            Some(Some(Action::DeleteMemoryItem))
+        }
         (PendingConfirm::BulkDeleteMemoryItems, KeyCode::Char('d')) => {
             Some(Some(Action::BulkDeleteMemoryItems))
         }
@@ -593,7 +620,8 @@ fn handle_pending_confirm(app: &mut App, code: KeyCode) -> Option<Option<Action>
             app.should_quit = true;
             Some(None)
         }
-        (PendingConfirm::TreeQuit, KeyCode::Esc) | (PendingConfirm::TreeQuit, KeyCode::Char('q')) => {
+        (PendingConfirm::TreeQuit, KeyCode::Esc)
+        | (PendingConfirm::TreeQuit, KeyCode::Char('q')) => {
             app.exit_tree_mode();
             Some(None)
         }
@@ -690,9 +718,11 @@ pub(crate) fn universe_choice_hints(app: &App) -> String {
 }
 
 fn handle_universe_choice_key(app: &mut App, code: KeyCode) -> Option<Action> {
-    if let Some(result) =
-        list_nav_key(code, &mut app.universe_choice_selected, UNIVERSE_CHOICE_ITEMS.len())
-    {
+    if let Some(result) = list_nav_key(
+        code,
+        &mut app.universe_choice_selected,
+        UNIVERSE_CHOICE_ITEMS.len(),
+    ) {
         return result;
     }
     if let Some(result) = back_key(code, app, Screen::Menu) {
@@ -1019,7 +1049,11 @@ fn handle_stores_key(app: &mut App, code: KeyCode) -> Option<Action> {
 const ENTRIES_KEYS: &[KeyAction] = &[
     KeyAction {
         keys: &[KeyCode::Char('n')],
-        hint: |app| app.entries_next_page_token.is_some().then_some("n: next page"),
+        hint: |app| {
+            app.entries_next_page_token
+                .is_some()
+                .then_some("n: next page")
+        },
         handler: |_| Some(Action::LoadNextEntriesPage),
     },
     KeyAction {
@@ -1143,7 +1177,11 @@ pub(crate) fn entries_create_hints(app: &App) -> String {
         .join("   ")
 }
 
-fn handle_entries_create_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
+fn handle_entries_create_key(
+    app: &mut App,
+    code: KeyCode,
+    modifiers: KeyModifiers,
+) -> Option<Action> {
     if app.entries_create_field == EntriesCreateField::Value
         && code == KeyCode::Char('t')
         && modifiers.contains(KeyModifiers::CONTROL)
@@ -1284,12 +1322,15 @@ const VALUE_KEYS: &[KeyAction] = &[
     },
     KeyAction {
         keys: &[KeyCode::Char('t')],
-        hint: |app| (app.value_source == ValueSource::MemoryStoreSortedMap).then_some("t: edit ttl"),
+        hint: |app| {
+            (app.value_source == ValueSource::MemoryStoreSortedMap).then_some("t: edit ttl")
+        },
         handler: |app| {
             if app.value_source != ValueSource::MemoryStoreSortedMap {
                 return None;
             }
-            app.memory_ttl_edit.set(app.memory_item_ttl_seconds.to_string());
+            app.memory_ttl_edit
+                .set(app.memory_item_ttl_seconds.to_string());
             app.memory_ttl_editing = true;
             None
         },
@@ -1541,7 +1582,11 @@ fn handle_ordered_store_input_key(app: &mut App, code: KeyCode) -> Option<Action
 const ORDERED_ENTRIES_KEYS: &[KeyAction] = &[
     KeyAction {
         keys: &[KeyCode::Char('n')],
-        hint: |app| app.ordered_entries_next_page_token.is_some().then_some("n: next page"),
+        hint: |app| {
+            app.ordered_entries_next_page_token
+                .is_some()
+                .then_some("n: next page")
+        },
         handler: |_| Some(Action::LoadNextOrderedEntriesPage),
     },
     KeyAction {
@@ -1590,7 +1635,9 @@ const ORDERED_ENTRIES_KEYS: &[KeyAction] = &[
     KeyAction {
         keys: &[KeyCode::Char('d')],
         hint: |app| {
-            if app.visible_ordered_entry_indices().is_empty() && app.ordered_entries_marked.is_empty() {
+            if app.visible_ordered_entry_indices().is_empty()
+                && app.ordered_entries_marked.is_empty()
+            {
                 None
             } else if app.ordered_entries_marked.is_empty() {
                 Some("d: delete")
@@ -1652,10 +1699,14 @@ fn handle_ordered_create_key(app: &mut App, code: KeyCode) -> Option<Action> {
         }
         _ => {
             match app.ordered_create_field {
-                OrderedCreateField::Id => handle_text_field_key(&mut app.ordered_create_id, code, |_| true),
-                OrderedCreateField::Value => {
-                    handle_text_field_key(&mut app.ordered_create_value, code, is_numeric_input_char)
+                OrderedCreateField::Id => {
+                    handle_text_field_key(&mut app.ordered_create_id, code, |_| true)
                 }
+                OrderedCreateField::Value => handle_text_field_key(
+                    &mut app.ordered_create_value,
+                    code,
+                    is_numeric_input_char,
+                ),
             };
             None
         }
@@ -1919,7 +1970,11 @@ fn handle_memory_store_input_key(app: &mut App, code: KeyCode) -> Option<Action>
 const MEMORY_ENTRIES_KEYS: &[KeyAction] = &[
     KeyAction {
         keys: &[KeyCode::Char('n')],
-        hint: |app| app.memory_items_next_page_token.is_some().then_some("n: next page"),
+        hint: |app| {
+            app.memory_items_next_page_token
+                .is_some()
+                .then_some("n: next page")
+        },
         handler: |_| Some(Action::LoadNextMemoryItemsPage),
     },
     KeyAction {
@@ -2058,7 +2113,11 @@ pub(crate) fn memory_create_hints(app: &App) -> String {
         .join("   ")
 }
 
-fn handle_memory_create_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
+fn handle_memory_create_key(
+    app: &mut App,
+    code: KeyCode,
+    modifiers: KeyModifiers,
+) -> Option<Action> {
     if app.memory_create_field == MemoryCreateField::Value
         && code == KeyCode::Char('t')
         && modifiers.contains(KeyModifiers::CONTROL)
@@ -2084,8 +2143,12 @@ fn handle_memory_create_key(app: &mut App, code: KeyCode, modifiers: KeyModifier
         }
         _ => {
             match app.memory_create_field {
-                MemoryCreateField::Id => handle_text_field_key(&mut app.memory_create_id, code, |_| true),
-                MemoryCreateField::Value => handle_text_field_key(&mut app.memory_create_value, code, |_| true),
+                MemoryCreateField::Id => {
+                    handle_text_field_key(&mut app.memory_create_id, code, |_| true)
+                }
+                MemoryCreateField::Value => {
+                    handle_text_field_key(&mut app.memory_create_value, code, |_| true)
+                }
                 MemoryCreateField::Ttl => {
                     handle_text_field_key(&mut app.memory_create_ttl, code, |c| c.is_ascii_digit())
                 }
@@ -2095,7 +2158,11 @@ fn handle_memory_create_key(app: &mut App, code: KeyCode, modifiers: KeyModifier
     }
 }
 
-fn handle_memory_entries_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
+fn handle_memory_entries_key(
+    app: &mut App,
+    code: KeyCode,
+    modifiers: KeyModifiers,
+) -> Option<Action> {
     if app.tree_mode {
         return handle_tree_key(app, code, modifiers);
     }

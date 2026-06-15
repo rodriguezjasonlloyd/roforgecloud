@@ -34,7 +34,10 @@ impl TextField {
         if self.cursor == 0 {
             return;
         }
-        let prev_len = self.value[..self.cursor].chars().last().map_or(0, char::len_utf8);
+        let prev_len = self.value[..self.cursor]
+            .chars()
+            .last()
+            .map_or(0, char::len_utf8);
         let new_cursor = self.cursor - prev_len;
         self.value.remove(new_cursor);
         self.cursor = new_cursor;
@@ -48,14 +51,20 @@ impl TextField {
 
     pub fn left(&mut self) {
         if self.cursor > 0 {
-            let prev_len = self.value[..self.cursor].chars().last().map_or(0, char::len_utf8);
+            let prev_len = self.value[..self.cursor]
+                .chars()
+                .last()
+                .map_or(0, char::len_utf8);
             self.cursor -= prev_len;
         }
     }
 
     pub fn right(&mut self) {
         if self.cursor < self.value.len() {
-            let next_len = self.value[self.cursor..].chars().next().map_or(0, char::len_utf8);
+            let next_len = self.value[self.cursor..]
+                .chars()
+                .next()
+                .map_or(0, char::len_utf8);
             self.cursor += next_len;
         }
     }
@@ -223,9 +232,7 @@ impl PendingConfirm {
             PendingConfirm::TreeQuit => {
                 "q/esc: discard changes and exit tree   any other key: cancel"
             }
-            PendingConfirm::TreeRefresh => {
-                "r: discard changes and refresh   any other key: cancel"
-            }
+            PendingConfirm::TreeRefresh => "r: discard changes and refresh   any other key: cancel",
         }
     }
 }
@@ -525,7 +532,9 @@ impl App {
             Action::LoadNextOrderedEntriesPage => self.load_next_ordered_entries_page().await,
             Action::LoadPrevOrderedEntriesPage => self.load_prev_ordered_entries_page().await,
             Action::RefreshOrderedEntries => self.load_ordered_entries_page().await,
-            Action::LoadAllOrderedEntriesForSearch => self.load_all_ordered_entries_for_search().await,
+            Action::LoadAllOrderedEntriesForSearch => {
+                self.load_all_ordered_entries_for_search().await
+            }
             Action::CreateOrderedEntry => self.create_ordered_entry().await,
             Action::CreateOrderedEntryExternal => {}
             Action::LoadOrderedValue => self.load_ordered_value().await,
@@ -804,7 +813,14 @@ impl App {
         loop {
             match self
                 .client
-                .list_entries(self.universe_id, &self.data_store_id, None, None, page_token.as_deref(), Some(256))
+                .list_entries(
+                    self.universe_id,
+                    &self.data_store_id,
+                    None,
+                    None,
+                    page_token.as_deref(),
+                    Some(256),
+                )
                 .await
             {
                 Ok(result) => {
@@ -924,13 +940,21 @@ impl App {
 
     pub fn text_input_active(&self) -> bool {
         match self.screen {
-            Screen::UniverseInput | Screen::Messaging | Screen::OrderedStoreInput | Screen::MemoryStoreInput => true,
+            Screen::UniverseInput
+            | Screen::Messaging
+            | Screen::OrderedStoreInput
+            | Screen::MemoryStoreInput => true,
             Screen::UniverseSelect => self.universe_search_active,
             Screen::Stores => self.stores_new_active,
             Screen::Entries => {
-                self.entries_search_active || self.entries_create_active || self.entries_create_choosing
+                self.entries_search_active
+                    || self.entries_create_active
+                    || self.entries_create_choosing
             }
-            Screen::Value => self.tree_mode && (self.tree_editing || self.tree_editing_key) || self.memory_ttl_editing,
+            Screen::Value => {
+                self.tree_mode && (self.tree_editing || self.tree_editing_key)
+                    || self.memory_ttl_editing
+            }
             Screen::OrderedEntries => {
                 self.ordered_entries_search_active
                     || self.ordered_create_active
@@ -1281,7 +1305,10 @@ impl App {
         let mut new_path = parent_path;
         new_path.push(insert_index);
         let rows = flatten(tree);
-        if let Some(idx) = rows.iter().position(|r| r.path == new_path && !r.is_closing) {
+        if let Some(idx) = rows
+            .iter()
+            .position(|r| r.path == new_path && !r.is_closing)
+        {
             self.tree_cursor = idx;
         }
     }
@@ -1442,8 +1469,7 @@ impl App {
                 self.value_scroll = 0;
                 self.status = "saved".to_string();
             }
-            Err(err)
-                if matches!(&err, roforgecloud_core::error::Error::Api { status, .. } if status.as_u16() == 409 || status.as_u16() == 412) =>
+            Err(err) if matches!(&err, roforgecloud_core::error::Error::Api { status, .. } if status.as_u16() == 409 || status.as_u16() == 412) =>
             {
                 self.load_value().await;
                 self.status = "conflict: entry changed on server — reloaded latest value, your edit was discarded".to_string();
@@ -1487,8 +1513,7 @@ impl App {
                 }
                 self.status = "saved".to_string();
             }
-            Err(err)
-                if matches!(&err, roforgecloud_core::error::Error::Api { status, .. } if status.as_u16() == 409 || status.as_u16() == 412) =>
+            Err(err) if matches!(&err, roforgecloud_core::error::Error::Api { status, .. } if status.as_u16() == 409 || status.as_u16() == 412) =>
             {
                 self.load_memory_value().await;
                 self.status = "conflict: item changed on server — reloaded latest value, your edit was discarded".to_string();
@@ -1510,7 +1535,8 @@ impl App {
             None => ("global".to_string(), id.to_string()),
         };
 
-        let value: serde_json::Value = match serde_json::from_str(&self.entries_create_value.value) {
+        let value: serde_json::Value = match serde_json::from_str(&self.entries_create_value.value)
+        {
             Ok(value) => value,
             Err(err) => {
                 self.status = format!("invalid JSON: {err}");
@@ -1521,7 +1547,13 @@ impl App {
         self.status = "creating...".to_string();
         match self
             .client
-            .create_entry(self.universe_id, &self.data_store_id, &key, Some(&scope), &value)
+            .create_entry(
+                self.universe_id,
+                &self.data_store_id,
+                &key,
+                Some(&scope),
+                &value,
+            )
             .await
         {
             Ok(()) => {
@@ -1712,7 +1744,10 @@ impl App {
         self.ordered_entries_marked.clear();
         self.ordered_entries_next_page_token = None;
         self.ordered_entries_page_tokens = vec![None];
-        self.status = format!("{} entries (search across whole store)", self.ordered_entries.len());
+        self.status = format!(
+            "{} entries (search across whole store)",
+            self.ordered_entries.len()
+        );
     }
 
     pub fn visible_ordered_entry_indices(&self) -> Vec<usize> {
@@ -1745,7 +1780,10 @@ impl App {
 
     pub fn toggle_select_all_ordered_visible(&mut self) {
         let visible = self.visible_ordered_entry_indices();
-        if visible.iter().all(|i| self.ordered_entries_marked.contains(i)) {
+        if visible
+            .iter()
+            .all(|i| self.ordered_entries_marked.contains(i))
+        {
             for i in &visible {
                 self.ordered_entries_marked.remove(i);
             }
@@ -1772,8 +1810,10 @@ impl App {
             .await
         {
             Ok(entry) => {
-                self.ordered_value_title =
-                    format!("{}/{id} (scope: {})", self.ordered_data_store_id.value, self.ordered_scope.value);
+                self.ordered_value_title = format!(
+                    "{}/{id} (scope: {})",
+                    self.ordered_data_store_id.value, self.ordered_scope.value
+                );
                 self.ordered_value = entry.value;
                 self.ordered_value_editing = false;
                 self.ordered_increment_editing = false;
@@ -2035,14 +2075,20 @@ impl App {
         self.status = "loading items...".to_string();
         match self
             .client
-            .list_sorted_map_items(self.universe_id, &self.memory_sorted_map_id, page_token.as_deref(), Some(256))
+            .list_sorted_map_items(
+                self.universe_id,
+                &self.memory_sorted_map_id,
+                page_token.as_deref(),
+                Some(256),
+            )
             .await
         {
             Ok(result) => {
                 self.memory_items = result.items;
                 self.memory_items_selected = 0;
                 self.memory_items_marked.clear();
-                self.memory_items_next_page_token = result.next_page_token.filter(|t| !t.is_empty());
+                self.memory_items_next_page_token =
+                    result.next_page_token.filter(|t| !t.is_empty());
                 let page = self.memory_items_page_tokens.len();
                 self.status = format!("{} items (page {page})", self.memory_items.len());
             }
@@ -2059,7 +2105,12 @@ impl App {
         loop {
             match self
                 .client
-                .list_sorted_map_items(self.universe_id, &self.memory_sorted_map_id, page_token.as_deref(), Some(256))
+                .list_sorted_map_items(
+                    self.universe_id,
+                    &self.memory_sorted_map_id,
+                    page_token.as_deref(),
+                    Some(256),
+                )
                 .await
             {
                 Ok(result) => {
@@ -2080,7 +2131,10 @@ impl App {
         self.memory_items_marked.clear();
         self.memory_items_next_page_token = None;
         self.memory_items_page_tokens = vec![None];
-        self.status = format!("{} items (search across whole sorted map)", self.memory_items.len());
+        self.status = format!(
+            "{} items (search across whole sorted map)",
+            self.memory_items.len()
+        );
     }
 
     pub fn visible_memory_item_indices(&self) -> Vec<usize> {
@@ -2136,7 +2190,8 @@ impl App {
         {
             Ok(item) => {
                 let expire = item.expire_time.clone().unwrap_or_else(|| "—".to_string());
-                self.value_title = format!("{}/{id} (expires: {expire})", self.memory_sorted_map_id);
+                self.value_title =
+                    format!("{}/{id} (expires: {expire})", self.memory_sorted_map_id);
                 self.value_text = serde_json::to_string_pretty(&item.value).unwrap_or_default();
                 self.value_revision = item.etag;
                 self.value_scroll = 0;
@@ -2178,7 +2233,13 @@ impl App {
         self.status = "creating...".to_string();
         match self
             .client
-            .create_sorted_map_item(self.universe_id, &self.memory_sorted_map_id, id, &value, ttl)
+            .create_sorted_map_item(
+                self.universe_id,
+                &self.memory_sorted_map_id,
+                id,
+                &value,
+                ttl,
+            )
             .await
         {
             Ok(_) => {

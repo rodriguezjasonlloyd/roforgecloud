@@ -151,7 +151,13 @@ fn draw_messaging(frame: &mut Frame, app: &App, area: Rect) {
     let message_active = app.messaging_field == MessagingField::Message;
 
     field_box(frame, rows[0], "Topic", &app.messaging_topic, topic_active);
-    field_paragraph_box(frame, rows[1], "Message", &app.messaging_message, message_active);
+    field_paragraph_box(
+        frame,
+        rows[1],
+        "Message",
+        &app.messaging_message,
+        message_active,
+    );
 }
 
 fn draw_ordered_store_input(frame: &mut Frame, app: &App, area: Rect) {
@@ -167,13 +173,23 @@ fn draw_ordered_store_input(frame: &mut Frame, app: &App, area: Rect) {
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Length(3), Constraint::Min(0)])
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Min(0),
+        ])
         .split(inner);
 
     let id_active = app.ordered_input_field == OrderedInputField::StoreId;
     let scope_active = app.ordered_input_field == OrderedInputField::Scope;
 
-    field_box(frame, rows[0], "Ordered Data Store ID", &app.ordered_data_store_id, id_active);
+    field_box(
+        frame,
+        rows[0],
+        "Ordered Data Store ID",
+        &app.ordered_data_store_id,
+        id_active,
+    );
     field_box(frame, rows[1], "Scope", &app.ordered_scope, scope_active);
 }
 
@@ -212,10 +228,16 @@ fn draw_ordered_entries(frame: &mut Frame, app: &App, area: Rect) {
         if app.ordered_entries_marked.is_empty() {
             store_label
         } else {
-            format!("{store_label} ({} selected)", app.ordered_entries_marked.len())
+            format!(
+                "{store_label} ({} selected)",
+                app.ordered_entries_marked.len()
+            )
         }
     } else if app.ordered_entries_marked.is_empty() {
-        format!("{store_label} (search: {})", app.ordered_entries_search.value)
+        format!(
+            "{store_label} (search: {})",
+            app.ordered_entries_search.value
+        )
     } else {
         format!(
             "{store_label} (search: {}, {} selected)",
@@ -246,9 +268,7 @@ fn draw_ordered_create_popup(frame: &mut Frame, app: &App, area: Rect) {
 
     let popup = centered_rect_lines(40, max_lines + 2 + 3 + 2, area);
     frame.render_widget(Clear, popup);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title("Create Entry");
+    let block = Block::default().borders(Borders::ALL).title("Create Entry");
     let inner = block.inner(popup);
     frame.render_widget(block, popup);
 
@@ -258,7 +278,13 @@ fn draw_ordered_create_popup(frame: &mut Frame, app: &App, area: Rect) {
         .split(inner);
 
     field_box(frame, rows[0], "Id", &app.ordered_create_id, id_active);
-    field_paragraph_box(frame, rows[1], "Value", &app.ordered_create_value, value_active);
+    field_paragraph_box(
+        frame,
+        rows[1],
+        "Value",
+        &app.ordered_create_value,
+        value_active,
+    );
 }
 
 fn draw_ordered_value(frame: &mut Frame, app: &App, area: Rect) {
@@ -318,7 +344,13 @@ fn draw_memory_store_input(frame: &mut Frame, app: &App, area: Rect) {
         .constraints([Constraint::Length(3), Constraint::Min(0)])
         .split(inner);
 
-    field_box(frame, rows[0], "Sorted Map", &app.memory_sorted_map_input, true);
+    field_box(
+        frame,
+        rows[0],
+        "Sorted Map",
+        &app.memory_sorted_map_input,
+        true,
+    );
 }
 
 fn draw_memory_entries(frame: &mut Frame, app: &App, area: Rect) {
@@ -339,13 +371,19 @@ fn draw_memory_entries(frame: &mut Frame, app: &App, area: Rect) {
             }
             let preview = serde_json::to_string(&item.value).unwrap_or_default();
             let expire = item.expire_time.as_deref().unwrap_or("—");
-            spans.push(Span::raw(format!("{}  =  {preview}  (expires: {expire})", item.id)));
+            spans.push(Span::raw(format!(
+                "{}  =  {preview}  (expires: {expire})",
+                item.id
+            )));
             ListItem::new(Line::from(spans))
         })
         .collect();
 
     let store_label = match app.universe_names.get(&app.universe_id) {
-        Some(name) => format!("{} (universe {} ({name}))", app.memory_sorted_map_id, app.universe_id),
+        Some(name) => format!(
+            "{} (universe {} ({name}))",
+            app.memory_sorted_map_id, app.universe_id
+        ),
         None => app.memory_sorted_map_id.clone(),
     };
     let title = if app.memory_items_search.value.is_empty() {
@@ -398,26 +436,46 @@ fn draw_memory_create_popup(frame: &mut Frame, app: &App, area: Rect) {
 
     let popup = centered_rect_lines(50, max_lines + 2 + 3 + 3 + 2, area);
     frame.render_widget(Clear, popup);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title("Create Item");
+    let block = Block::default().borders(Borders::ALL).title("Create Item");
     let inner = block.inner(popup);
     frame.render_widget(block, popup);
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(0), Constraint::Length(3)])
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(0),
+            Constraint::Length(3),
+        ])
         .split(inner);
 
     field_box(frame, rows[0], "Id", &app.memory_create_id, id_active);
-    field_paragraph_box(frame, rows[1], "Value (JSON)", &app.memory_create_value, value_active);
-    field_box(frame, rows[2], "TTL (seconds)", &app.memory_create_ttl, ttl_active);
+    field_paragraph_box(
+        frame,
+        rows[1],
+        "Value (JSON)",
+        &app.memory_create_value,
+        value_active,
+    );
+    field_box(
+        frame,
+        rows[2],
+        "TTL (seconds)",
+        &app.memory_create_ttl,
+        ttl_active,
+    );
 }
 
 fn draw_memory_ttl_popup(frame: &mut Frame, app: &App, area: Rect) {
     let popup = centered_rect_lines(40, 3, area);
     frame.render_widget(Clear, popup);
-    field_box(frame, popup, "Edit TTL (seconds)", &app.memory_ttl_edit, true);
+    field_box(
+        frame,
+        popup,
+        "Edit TTL (seconds)",
+        &app.memory_ttl_edit,
+        true,
+    );
 }
 
 fn draw_stores(frame: &mut Frame, app: &App, area: Rect) {
@@ -436,7 +494,11 @@ fn draw_stores(frame: &mut Frame, app: &App, area: Rect) {
                 spans.push(Span::raw(marker));
             }
             spans.push(Span::raw(store.id.clone()));
-            if store.state.as_deref().is_some_and(|state| state != "ACTIVE") {
+            if store
+                .state
+                .as_deref()
+                .is_some_and(|state| state != "ACTIVE")
+            {
                 spans.push(Span::styled(
                     "  [SCHEDULED DELETION]",
                     Style::default().fg(Color::DarkGray),
@@ -566,9 +628,7 @@ fn draw_entries_create_popup(frame: &mut Frame, app: &App, area: Rect) {
 
     let popup = centered_rect_lines(50, max_lines + 2 + 3 + 2, area);
     frame.render_widget(Clear, popup);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title("Create Entry");
+    let block = Block::default().borders(Borders::ALL).title("Create Entry");
     let inner = block.inner(popup);
     frame.render_widget(block, popup);
 
@@ -578,7 +638,13 @@ fn draw_entries_create_popup(frame: &mut Frame, app: &App, area: Rect) {
         .split(inner);
 
     field_box(frame, rows[0], "Id", &app.entries_create_id, id_active);
-    field_paragraph_box(frame, rows[1], "Value (JSON)", &app.entries_create_value, value_active);
+    field_paragraph_box(
+        frame,
+        rows[1],
+        "Value (JSON)",
+        &app.entries_create_value,
+        value_active,
+    );
 }
 
 fn draw_value(frame: &mut Frame, app: &App, area: Rect) {
@@ -740,13 +806,19 @@ fn screen_binds(app: &App) -> String {
     match app.screen {
         Screen::Menu => format!("{MOVE}   {}   {QUIT}", crate::menu_hints(app)),
         Screen::UniverseChoice => {
-            format!("{MOVE}   {}   {BACK_QUIT}", crate::universe_choice_hints(app))
+            format!(
+                "{MOVE}   {}   {BACK_QUIT}",
+                crate::universe_choice_hints(app)
+            )
         }
         Screen::UniverseSelect if app.universe_search_active => {
             "type to search by id or name   enter/esc: confirm".to_string()
         }
         Screen::UniverseSelect => {
-            format!("{MOVE}   {}   {BACK_QUIT}", crate::universe_select_hints(app))
+            format!(
+                "{MOVE}   {}   {BACK_QUIT}",
+                crate::universe_select_hints(app)
+            )
         }
         Screen::UniverseInput => "type a universe id   enter: confirm   esc: back".to_string(),
         Screen::Stores if app.stores_new_active => {
@@ -790,7 +862,10 @@ fn screen_binds(app: &App) -> String {
             "tab: switch field   enter: create   esc: cancel".to_string()
         }
         Screen::OrderedEntries => {
-            format!("{MOVE}   {}   {BACK_QUIT}", crate::ordered_entries_hints(app))
+            format!(
+                "{MOVE}   {}   {BACK_QUIT}",
+                crate::ordered_entries_hints(app)
+            )
         }
         Screen::OrderedValue if app.ordered_value_editing => {
             "type to edit   enter: confirm   esc: cancel".to_string()
@@ -803,7 +878,9 @@ fn screen_binds(app: &App) -> String {
         Screen::MemoryStoreEntries if app.memory_items_search_active => {
             "type to search by id   enter/esc: confirm".to_string()
         }
-        Screen::MemoryStoreEntries if app.tree_mode && (app.tree_editing || app.tree_editing_key) => {
+        Screen::MemoryStoreEntries
+            if app.tree_mode && (app.tree_editing || app.tree_editing_key) =>
+        {
             "type to edit   enter: confirm   esc: cancel".to_string()
         }
         Screen::MemoryStoreEntries if app.tree_mode => {
@@ -817,7 +894,10 @@ fn screen_binds(app: &App) -> String {
             "type ttl seconds   enter: confirm   esc: cancel".to_string()
         }
         Screen::MemoryStoreEntries => {
-            format!("{MOVE}   {}   {BACK_QUIT}", crate::memory_entries_hints(app))
+            format!(
+                "{MOVE}   {}   {BACK_QUIT}",
+                crate::memory_entries_hints(app)
+            )
         }
     }
 }
@@ -883,7 +963,9 @@ fn help_sections(app: &App) -> Vec<(&'static str, HintList)> {
 }
 
 fn field_box(frame: &mut Frame, area: Rect, title: &str, field: &TextField, active: bool) {
-    let block = Block::default().borders(Borders::ALL).title(title.to_string());
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title.to_string());
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -894,8 +976,16 @@ fn field_box(frame: &mut Frame, area: Rect, title: &str, field: &TextField, acti
     }
 }
 
-fn field_paragraph_box(frame: &mut Frame, area: Rect, title: &str, field: &TextField, active: bool) {
-    let block = Block::default().borders(Borders::ALL).title(title.to_string());
+fn field_paragraph_box(
+    frame: &mut Frame,
+    area: Rect,
+    title: &str,
+    field: &TextField,
+    active: bool,
+) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title.to_string());
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -945,7 +1035,11 @@ fn field_paragraph(
     let total = chars.len();
     let cursor_idx = field.value[..field.cursor].chars().count();
 
-    let mut num_lines = if total == 0 { 1 } else { total.div_ceil(cont_width) };
+    let mut num_lines = if total == 0 {
+        1
+    } else {
+        total.div_ceil(cont_width)
+    };
     if total > 0 && cursor_idx == total && total.is_multiple_of(cont_width) {
         num_lines += 1;
     }
@@ -954,7 +1048,9 @@ fn field_paragraph(
     let cursor_col = cursor_idx % cont_width;
 
     let start_line = if num_lines > max_lines {
-        cursor_line.saturating_sub(max_lines - 1).min(num_lines - max_lines)
+        cursor_line
+            .saturating_sub(max_lines - 1)
+            .min(num_lines - max_lines)
     } else {
         0
     };
@@ -1011,7 +1107,12 @@ fn centered_rect_lines(percent_x: u16, height: u16, area: Rect) -> Rect {
     let height = height.min(area.height);
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
-    Rect { x, y, width, height }
+    Rect {
+        x,
+        y,
+        width,
+        height,
+    }
 }
 
 fn draw_help(frame: &mut Frame, app: &App, area: Rect) {
@@ -1024,7 +1125,9 @@ fn draw_help(frame: &mut Frame, app: &App, area: Rect) {
         }
         lines.push(Line::from(Span::styled(
             title,
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         )));
 
         let key_width = binds.iter().map(|(key, _)| key.len()).max().unwrap_or(0);

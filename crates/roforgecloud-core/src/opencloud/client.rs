@@ -21,8 +21,6 @@ pub(crate) fn item_path(collection_path: &str, item_id: &str) -> String {
     format!("{collection_path}/{}", encode_path_segment(item_id))
 }
 
-/// Builds a `/cloud/v2/universes/{universe_id}` path, optionally appending
-/// a suffix (e.g. `/data-stores` or `:publishMessage`).
 pub(crate) fn universe_path(universe_id: u64, suffix: &str) -> String {
     format!("/cloud/v2/universes/{universe_id}{suffix}")
 }
