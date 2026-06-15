@@ -154,17 +154,17 @@ async fn run<B: ratatui::backend::Backend + io::Write>(
             continue;
         }
 
-        if app.show_help {
+        if app.which_key.active {
             if matches!(
                 key.code,
                 KeyCode::Char('?') | KeyCode::Esc | KeyCode::Char('q')
             ) {
-                app.show_help = false;
+                app.which_key.dismiss();
             }
             continue;
         }
         if key.code == KeyCode::Char('?') && !app.text_input_active() {
-            app.show_help = true;
+            app.which_key.toggle();
             continue;
         }
 

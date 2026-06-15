@@ -181,6 +181,23 @@ pub(crate) fn hint_bar(app: &App, scope: Scope) -> String {
         .join("   ")
 }
 
+/// Bindings for the active scope, grouped by which-key category, for the
+/// `?` help popup: `(category, [(key, description), ...])`.
+pub(crate) fn help_sections(app: &App) -> Vec<(String, Vec<(String, String)>)> {
+    app.which_key
+        .current_bindings()
+        .iter()
+        .map(|group| {
+            let bindings = group
+                .bindings
+                .iter()
+                .map(|binding| (binding.key.display(), binding.description.clone()))
+                .collect();
+            (group.category.clone(), bindings)
+        })
+        .collect()
+}
+
 pub(crate) fn build_keymap() -> Keymap<AppKey, Scope, Act, Category> {
     let mut keymap = Keymap::new();
 

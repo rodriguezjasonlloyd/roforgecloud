@@ -37,7 +37,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     draw_info(frame, app, chunks[1]);
 
-    if app.show_help {
+    if app.which_key.active {
         draw_help(frame, app, frame.area());
     }
 }
@@ -944,35 +944,6 @@ fn draw_keybinds(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(paragraph, area);
 }
 
-fn parse_hints(hints: &str) -> Vec<(String, String)> {
-    hints
-        .split("   ")
-        .filter(|entry| !entry.is_empty())
-        .filter_map(|entry| {
-            let (key, desc) = entry.split_once(": ")?;
-            Some((key.to_string(), desc.to_string()))
-        })
-        .collect()
-}
-
-type HintList = Vec<(String, String)>;
-
-fn help_sections(app: &App) -> Vec<(&'static str, HintList)> {
-    let (movement, other): (HintList, HintList) = parse_hints(&screen_binds(app))
-        .into_iter()
-        .partition(|(key, _)| key.contains('↑') || key.starts_with("pgup"));
-
-    let mut sections = Vec::new();
-    if !movement.is_empty() {
-        sections.push(("Movement", movement));
-    }
-    if !other.is_empty() {
-        sections.push(("This screen", other));
-    }
-    sections.push(("General", parse_hints("?: toggle this help")));
-    sections
-}
-
 fn field_box(frame: &mut Frame, area: Rect, title: &str, field: &TextField, active: bool) {
     let block = Block::default()
         .borders(Borders::ALL)
@@ -1130,12 +1101,12 @@ fn draw_help(frame: &mut Frame, app: &App, area: Rect) {
     let popup = centered_rect(60, 60, area);
 
     let mut lines = Vec::new();
-    for (title, binds) in help_sections(app) {
+    for (category, binds) in crate::update::help_sections(app) {
         if !lines.is_empty() {
             lines.push(Line::from(""));
         }
         lines.push(Line::from(Span::styled(
-            title,
+            category,
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),

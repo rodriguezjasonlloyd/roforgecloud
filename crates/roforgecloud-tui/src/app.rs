@@ -258,7 +258,6 @@ pub struct App {
     pub should_quit: bool,
     pub loading: bool,
     pub status: String,
-    pub show_help: bool,
 
     pub menu_items: Vec<(&'static str, usize)>,
     pub menu_selected: usize,
@@ -399,7 +398,6 @@ impl App {
             should_quit: false,
             loading: false,
             status: String::new(),
-            show_help: false,
             menu_items,
             menu_selected: 0,
             stores: Vec::new(),
