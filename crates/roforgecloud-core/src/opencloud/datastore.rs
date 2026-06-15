@@ -151,6 +151,19 @@ impl OpenCloudClient {
         entry_id: &str,
         scope: Option<&str>,
     ) -> Result<serde_json::Value> {
+        let (value, _) = self
+            .get_entry_with_revision(universe_id, data_store_id, entry_id, scope)
+            .await?;
+        Ok(value)
+    }
+
+    pub async fn get_entry_with_revision(
+        &self,
+        universe_id: u64,
+        data_store_id: &str,
+        entry_id: &str,
+        scope: Option<&str>,
+    ) -> Result<(serde_json::Value, Option<String>)> {
         let path = format!(
             "{}/{}",
             self.entries_path(universe_id, data_store_id, scope),
@@ -159,10 +172,18 @@ impl OpenCloudClient {
         let builder = self.request(Method::GET, &path);
         let entry: serde_json::Value = self.send_json(builder).await?;
         Ok(match entry {
-            serde_json::Value::Object(mut obj) => obj
-                .remove("value")
-                .unwrap_or(serde_json::Value::Object(obj)),
-            other => other,
+            serde_json::Value::Object(mut obj) => {
+                let revision = obj
+                    .get("revisionId")
+                    .or_else(|| obj.get("etag"))
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let value = obj
+                    .remove("value")
+                    .unwrap_or(serde_json::Value::Object(obj));
+                (value, revision)
+            }
+            other => (other, None),
         })
     }
 
@@ -190,18 +211,27 @@ impl OpenCloudClient {
         entry_id: &str,
         scope: Option<&str>,
         value: &serde_json::Value,
-    ) -> Result<()> {
+        match_version: Option<&str>,
+    ) -> Result<Option<String>> {
         let path = format!(
             "{}/{}",
             self.entries_path(universe_id, data_store_id, scope),
             encode_path_segment(entry_id)
         );
+        let mut query = vec![("allowMissing".to_string(), "true".to_string())];
+        if let Some(match_version) = match_version {
+            query.push(("matchVersion".to_string(), match_version.to_string()));
+        }
         let builder = self
             .request(Method::PATCH, &path)
-            .query(&[("allowMissing", "true")])
+            .query(&query)
             .json(&serde_json::json!({ "value": value }));
-        self.send(builder).await?;
-        Ok(())
+        let response: serde_json::Value = self.send_json(builder).await?;
+        Ok(response
+            .get("revisionId")
+            .or_else(|| response.get("etag"))
+            .and_then(|v| v.as_str())
+            .map(String::from))
     }
 
     pub async fn delete_entry(

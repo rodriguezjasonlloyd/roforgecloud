@@ -4,14 +4,14 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
 
-use crate::app::{App, MessagingField, Screen, SERVICE_ACCOUNT, UNIVERSE_CHOICE_ITEMS};
+use crate::app::{
+    App, EntriesCreateField, MessagingField, OrderedCreateField, OrderedInputField, Screen,
+    TextField, SERVICE_ACCOUNT, UNIVERSE_CHOICE_ITEMS,
+};
 use crate::json_highlight;
 use crate::json_tree;
 
-const HIGHLIGHT_STYLE: Style = Style::new()
-    .bg(Color::Cyan)
-    .fg(Color::Black)
-    .add_modifier(Modifier::BOLD);
+const HIGHLIGHT_STYLE: Style = Style::new().bg(Color::Rgb(60, 60, 60)).fg(Color::White);
 
 pub fn draw(frame: &mut Frame, app: &App) {
     let chunks = Layout::default()
@@ -28,6 +28,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
         Screen::Entries => draw_entries(frame, app, chunks[0]),
         Screen::Value => draw_value(frame, app, chunks[0]),
         Screen::Messaging => draw_messaging(frame, app, chunks[0]),
+        Screen::OrderedStoreInput => draw_ordered_store_input(frame, app, chunks[0]),
+        Screen::OrderedEntries => draw_ordered_entries(frame, app, chunks[0]),
+        Screen::OrderedValue => draw_ordered_value(frame, app, chunks[0]),
     }
 
     draw_info(frame, app, chunks[1]);
@@ -38,10 +41,16 @@ pub fn draw(frame: &mut Frame, app: &App) {
 }
 
 fn draw_universe_input(frame: &mut Frame, app: &App, area: Rect) {
-    let text = format!("Universe ID: {}", app.universe_input);
-    let paragraph = Paragraph::new(Line::from(text))
-        .block(Block::default().borders(Borders::ALL).title("roforgecloud"));
-    frame.render_widget(paragraph, area);
+    let block = Block::default().borders(Borders::ALL).title("roforgecloud");
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(0)])
+        .split(inner);
+
+    field_box(frame, rows[0], "Universe ID", &app.universe_input, true);
 }
 
 fn draw_menu(frame: &mut Frame, app: &App, area: Rect) {
@@ -103,10 +112,10 @@ fn draw_universe_select(frame: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let title = if app.universe_search.is_empty() {
+    let title = if app.universe_search.value.is_empty() {
         "Select Universe".to_string()
     } else {
-        format!("Select Universe (search: {})", app.universe_search)
+        format!("Select Universe (search: {})", app.universe_search.value)
     };
 
     let list = List::new(items)
@@ -133,27 +142,162 @@ fn draw_messaging(frame: &mut Frame, app: &App, area: Rect) {
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Length(1)])
+        .constraints([Constraint::Length(3), Constraint::Min(3)])
         .split(inner);
 
-    let topic_style = match app.messaging_field {
-        MessagingField::Topic => HIGHLIGHT_STYLE,
-        MessagingField::Message => Style::default(),
+    let topic_active = app.messaging_field == MessagingField::Topic;
+    let message_active = app.messaging_field == MessagingField::Message;
+
+    field_box(frame, rows[0], "Topic", &app.messaging_topic, topic_active);
+    field_paragraph_box(frame, rows[1], "Message", &app.messaging_message, message_active);
+}
+
+fn draw_ordered_store_input(frame: &mut Frame, app: &App, area: Rect) {
+    let universe = match app.universe_names.get(&app.universe_id) {
+        Some(name) => format!("{} ({name})", app.universe_id),
+        None => app.universe_id.to_string(),
     };
-    let message_style = match app.messaging_field {
-        MessagingField::Message => HIGHLIGHT_STYLE,
-        MessagingField::Topic => Style::default(),
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(format!("Ordered Data Stores (universe {universe})"));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Length(3), Constraint::Min(0)])
+        .split(inner);
+
+    let id_active = app.ordered_input_field == OrderedInputField::StoreId;
+    let scope_active = app.ordered_input_field == OrderedInputField::Scope;
+
+    field_box(frame, rows[0], "Ordered Data Store ID", &app.ordered_data_store_id, id_active);
+    field_box(frame, rows[1], "Scope", &app.ordered_scope, scope_active);
+}
+
+fn draw_ordered_entries(frame: &mut Frame, app: &App, area: Rect) {
+    let visible = app.visible_ordered_entry_indices();
+
+    let items: Vec<ListItem> = visible
+        .iter()
+        .map(|&i| {
+            let entry = &app.ordered_entries[i];
+            let mut spans = Vec::new();
+            if !app.ordered_entries_marked.is_empty() {
+                let marker = if app.ordered_entries_marked.contains(&i) {
+                    "[x] "
+                } else {
+                    "[ ] "
+                };
+                spans.push(Span::raw(marker));
+            }
+            spans.push(Span::raw(format!("{}  =  {}", entry.id, entry.value)));
+            ListItem::new(Line::from(spans))
+        })
+        .collect();
+
+    let store_label = match app.universe_names.get(&app.universe_id) {
+        Some(name) => format!(
+            "{} (scope: {}, universe {} ({name}))",
+            app.ordered_data_store_id.value, app.ordered_scope.value, app.universe_id
+        ),
+        None => format!(
+            "{} (scope: {})",
+            app.ordered_data_store_id.value, app.ordered_scope.value
+        ),
+    };
+    let title = if app.ordered_entries_search.value.is_empty() {
+        if app.ordered_entries_marked.is_empty() {
+            store_label
+        } else {
+            format!("{store_label} ({} selected)", app.ordered_entries_marked.len())
+        }
+    } else if app.ordered_entries_marked.is_empty() {
+        format!("{store_label} (search: {})", app.ordered_entries_search.value)
+    } else {
+        format!(
+            "{store_label} (search: {}, {} selected)",
+            app.ordered_entries_search.value,
+            app.ordered_entries_marked.len()
+        )
     };
 
-    frame.render_widget(
-        Paragraph::new(Line::from(format!("Topic:   {}", app.messaging_topic))).style(topic_style),
-        rows[0],
+    let list = List::new(items)
+        .block(Block::default().borders(Borders::ALL).title(title))
+        .highlight_style(HIGHLIGHT_STYLE);
+
+    let mut state = ListState::default();
+    if !visible.is_empty() {
+        state.select(Some(app.ordered_entries_selected));
+    }
+    frame.render_stateful_widget(list, area, &mut state);
+
+    if app.ordered_create_active {
+        draw_ordered_create_popup(frame, app, area);
+    }
+}
+
+fn draw_ordered_create_popup(frame: &mut Frame, app: &App, area: Rect) {
+    let id_active = app.ordered_create_field == OrderedCreateField::Id;
+    let value_active = app.ordered_create_field == OrderedCreateField::Value;
+    let max_lines = 5;
+
+    let popup = centered_rect_lines(40, max_lines + 2 + 3 + 2, area);
+    frame.render_widget(Clear, popup);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title("Create Entry");
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(0)])
+        .split(inner);
+
+    field_box(frame, rows[0], "Id", &app.ordered_create_id, id_active);
+    field_paragraph_box(frame, rows[1], "Value", &app.ordered_create_value, value_active);
+}
+
+fn draw_ordered_value(frame: &mut Frame, app: &App, area: Rect) {
+    let mut lines = vec![Line::from("")];
+
+    if app.ordered_value_editing {
+        lines.push(Line::from(vec![
+            Span::raw("value: "),
+            Span::styled(
+                format!("{}█", app.ordered_value_edit),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::UNDERLINED),
+            ),
+        ]));
+    } else {
+        lines.push(Line::from(Span::styled(
+            app.ordered_value.to_string(),
+            Style::default().fg(Color::Yellow),
+        )));
+    }
+
+    if app.ordered_increment_editing {
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::raw("increment by: "),
+            Span::styled(
+                format!("{}█", app.ordered_increment_edit),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::UNDERLINED),
+            ),
+        ]));
+    }
+
+    let paragraph = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(app.ordered_value_title.clone()),
     );
-    frame.render_widget(
-        Paragraph::new(Line::from(format!("Message: {}", app.messaging_message)))
-            .style(message_style),
-        rows[1],
-    );
+    frame.render_widget(paragraph, area);
 }
 
 fn draw_stores(frame: &mut Frame, app: &App, area: Rect) {
@@ -202,6 +346,23 @@ fn draw_stores(frame: &mut Frame, app: &App, area: Rect) {
         state.select(Some(app.stores_selected));
     }
     frame.render_stateful_widget(list, area, &mut state);
+
+    if app.stores_new_active {
+        draw_stores_new_popup(frame, app, area);
+    }
+}
+
+fn draw_stores_new_popup(frame: &mut Frame, app: &App, area: Rect) {
+    let popup = centered_rect_lines(50, 5, area);
+
+    frame.render_widget(Clear, popup);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title("Create entry in new store");
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+
+    field_box(frame, inner, "Data Store ID", &app.stores_new_id, true);
 }
 
 fn draw_entries(frame: &mut Frame, app: &App, area: Rect) {
@@ -240,18 +401,18 @@ fn draw_entries(frame: &mut Frame, app: &App, area: Rect) {
         ),
         None => app.data_store_id.clone(),
     };
-    let title = if app.entries_search.is_empty() {
+    let title = if app.entries_search.value.is_empty() {
         if app.entries_marked.is_empty() {
             store_label
         } else {
             format!("{store_label} ({} selected)", app.entries_marked.len())
         }
     } else if app.entries_marked.is_empty() {
-        format!("{store_label} (search: {})", app.entries_search)
+        format!("{store_label} (search: {})", app.entries_search.value)
     } else {
         format!(
             "{store_label} (search: {}, {} selected)",
-            app.entries_search,
+            app.entries_search.value,
             app.entries_marked.len()
         )
     };
@@ -265,6 +426,32 @@ fn draw_entries(frame: &mut Frame, app: &App, area: Rect) {
         state.select(Some(app.entries_selected));
     }
     frame.render_stateful_widget(list, area, &mut state);
+
+    if app.entries_create_active {
+        draw_entries_create_popup(frame, app, area);
+    }
+}
+
+fn draw_entries_create_popup(frame: &mut Frame, app: &App, area: Rect) {
+    let id_active = app.entries_create_field == EntriesCreateField::Id;
+    let value_active = app.entries_create_field == EntriesCreateField::Value;
+    let max_lines = 6;
+
+    let popup = centered_rect_lines(50, max_lines + 2 + 3 + 2, area);
+    frame.render_widget(Clear, popup);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title("Create Entry (value: JSON)");
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(0)])
+        .split(inner);
+
+    field_box(frame, rows[0], "Id", &app.entries_create_id, id_active);
+    field_paragraph_box(frame, rows[1], "Value", &app.entries_create_value, value_active);
 }
 
 fn draw_value(frame: &mut Frame, app: &App, area: Rect) {
@@ -305,6 +492,8 @@ fn draw_tree(frame: &mut Frame, app: &App, area: Rect) {
     };
     let rows = json_tree::flatten(tree);
 
+    let mut edit_cursor_col = 0u16;
+
     let items: Vec<ListItem> = rows
         .iter()
         .enumerate()
@@ -322,7 +511,16 @@ fn draw_tree(frame: &mut Frame, app: &App, area: Rect) {
                 spans.push(Span::raw("  "));
             }
 
-            if let Some(key) = &row.key {
+            if i == app.tree_cursor && app.tree_editing_key {
+                let field = &app.tree_edit_key;
+                let prefix_width: usize = spans.iter().map(|s| s.content.chars().count()).sum();
+                let cursor_idx = field.value[..field.cursor].chars().count();
+                edit_cursor_col = (prefix_width + 1 + cursor_idx) as u16;
+                let style = Style::new().bg(Color::Rgb(50, 50, 50)).fg(Color::Yellow);
+                spans.push(Span::raw("\""));
+                spans.push(Span::styled(field.value.clone(), style));
+                spans.push(Span::raw("\": "));
+            } else if let Some(key) = &row.key {
                 spans.push(Span::styled(
                     format!("{key:?}: "),
                     Style::default().fg(Color::Cyan),
@@ -330,12 +528,12 @@ fn draw_tree(frame: &mut Frame, app: &App, area: Rect) {
             }
 
             if i == app.tree_cursor && app.tree_editing {
-                spans.push(Span::styled(
-                    format!("{}█", app.tree_edit_text),
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::UNDERLINED),
-                ));
+                let field = &app.tree_edit_text;
+                let prefix_width: usize = spans.iter().map(|s| s.content.chars().count()).sum();
+                let cursor_idx = field.value[..field.cursor].chars().count();
+                edit_cursor_col = (prefix_width + cursor_idx) as u16;
+                let style = Style::new().bg(Color::Rgb(50, 50, 50)).fg(Color::Yellow);
+                spans.push(Span::styled(field.value.clone(), style));
             } else {
                 spans.push(Span::styled(
                     row.preview.clone(),
@@ -347,7 +545,9 @@ fn draw_tree(frame: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let title = if app.tree_editing {
+    let editing = app.tree_editing || app.tree_editing_key;
+
+    let title = if editing {
         format!("{} (editing)", app.value_title)
     } else {
         format!("{} (tree)", app.value_title)
@@ -358,8 +558,26 @@ fn draw_tree(frame: &mut Frame, app: &App, area: Rect) {
         .highlight_style(HIGHLIGHT_STYLE);
 
     let mut state = ListState::default();
-    state.select(Some(app.tree_cursor));
+    if editing {
+        state.select(None);
+        let visible_height = area.height.saturating_sub(2) as usize;
+        let max_offset = rows.len().saturating_sub(visible_height);
+        *state.offset_mut() = app
+            .tree_cursor
+            .saturating_sub(visible_height / 2)
+            .min(max_offset);
+    } else {
+        state.select(Some(app.tree_cursor));
+    }
     frame.render_stateful_widget(list, area, &mut state);
+
+    if editing {
+        let inner = Block::default().borders(Borders::ALL).inner(area);
+        let row_y = app.tree_cursor.saturating_sub(state.offset());
+        if row_y < inner.height as usize {
+            frame.set_cursor_position((inner.x + edit_cursor_col, inner.y + row_y as u16));
+        }
+    }
 }
 
 fn draw_info(frame: &mut Frame, app: &App, area: Rect) {
@@ -400,12 +618,21 @@ fn screen_binds(app: &App) -> String {
             format!("{MOVE}   {}   {BACK_QUIT}", crate::universe_select_hints(app))
         }
         Screen::UniverseInput => "type a universe id   enter: confirm   esc: back".to_string(),
+        Screen::Stores if app.stores_new_active => {
+            "type a data store id   enter: continue   esc: cancel".to_string()
+        }
         Screen::Stores => format!("{MOVE}   {}   {BACK_QUIT}", crate::stores_hints(app)),
         Screen::Entries if app.entries_search_active => {
             "type to search by id or username   enter/esc: confirm".to_string()
         }
+        Screen::Entries if app.entries_create_choosing => {
+            "n: form   e: $EDITOR   esc: cancel".to_string()
+        }
+        Screen::Entries if app.entries_create_active => {
+            "tab: switch field   enter: create   esc: cancel".to_string()
+        }
         Screen::Entries => format!("{MOVE}   {}   {BACK_QUIT}", crate::entries_hints(app)),
-        Screen::Value if app.tree_mode && app.tree_editing => {
+        Screen::Value if app.tree_mode && (app.tree_editing || app.tree_editing_key) => {
             "type to edit   enter: confirm   esc: cancel".to_string()
         }
         Screen::Value if app.tree_mode => {
@@ -416,6 +643,26 @@ fn screen_binds(app: &App) -> String {
             crate::value_hints(app)
         ),
         Screen::Messaging => "tab: switch field   enter: publish   esc: back".to_string(),
+        Screen::OrderedStoreInput => "tab: switch field   enter: confirm   esc: back".to_string(),
+        Screen::OrderedEntries if app.ordered_entries_search_active => {
+            "type to search by id   enter/esc: confirm".to_string()
+        }
+        Screen::OrderedEntries if app.ordered_create_choosing => {
+            "n: form   e: $EDITOR   esc: cancel".to_string()
+        }
+        Screen::OrderedEntries if app.ordered_create_active => {
+            "tab: switch field   enter: create   esc: cancel".to_string()
+        }
+        Screen::OrderedEntries => {
+            format!("{MOVE}   {}   {BACK_QUIT}", crate::ordered_entries_hints(app))
+        }
+        Screen::OrderedValue if app.ordered_value_editing => {
+            "type to edit   enter: confirm   esc: cancel".to_string()
+        }
+        Screen::OrderedValue if app.ordered_increment_editing => {
+            "type amount   enter: confirm   esc: cancel".to_string()
+        }
+        Screen::OrderedValue => format!("{}   {BACK_QUIT}", crate::ordered_value_hints(app)),
     }
 }
 
@@ -424,6 +671,16 @@ fn draw_keybinds(frame: &mut Frame, app: &App, area: Rect) {
         let paragraph = Paragraph::new(Line::from(pending.footer_hint()))
             .style(Style::default().fg(Color::DarkGray))
             .block(Block::default().borders(Borders::ALL));
+        frame.render_widget(paragraph, area);
+        return;
+    }
+
+    if app.tree_pending_leader {
+        let paragraph = Paragraph::new(Line::from(
+            "v: edit value   k: edit key   e: edit in $EDITOR   any other key: cancel",
+        ))
+        .style(Style::default().fg(Color::DarkGray))
+        .block(Block::default().borders(Borders::ALL));
         frame.render_widget(paragraph, area);
         return;
     }
@@ -469,6 +726,110 @@ fn help_sections(app: &App) -> Vec<(&'static str, HintList)> {
     sections
 }
 
+fn field_box(frame: &mut Frame, area: Rect, title: &str, field: &TextField, active: bool) {
+    let block = Block::default().borders(Borders::ALL).title(title.to_string());
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let (line, cursor_col) = field_line("", field, active, inner.width);
+    frame.render_widget(Paragraph::new(line), inner);
+    if active {
+        frame.set_cursor_position((inner.x + cursor_col, inner.y));
+    }
+}
+
+fn field_paragraph_box(frame: &mut Frame, area: Rect, title: &str, field: &TextField, active: bool) {
+    let block = Block::default().borders(Borders::ALL).title(title.to_string());
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let (lines, cursor) = field_paragraph("", field, active, inner.width, inner.height);
+    frame.render_widget(Paragraph::new(lines), inner);
+    if active {
+        frame.set_cursor_position((inner.x + cursor.0, inner.y + cursor.1));
+    }
+}
+
+fn field_line(label: &str, field: &TextField, _active: bool, width: u16) -> (Line<'static>, u16) {
+    let label_width = label.chars().count() as u16;
+    let field_width = width.saturating_sub(label_width).max(1) as usize;
+
+    let chars: Vec<char> = field.value.chars().collect();
+    let cursor_idx = field.value[..field.cursor].chars().count();
+
+    let start = if cursor_idx >= field_width {
+        cursor_idx + 1 - field_width
+    } else {
+        0
+    };
+    let end = (start + field_width).min(chars.len());
+    let visible: Vec<char> = chars[start..end].to_vec();
+
+    let mut text: String = visible.into_iter().collect();
+    while text.chars().count() < field_width {
+        text.push(' ');
+    }
+    let line = Line::from(vec![Span::raw(label.to_string()), Span::raw(text)]);
+    let cursor_col = label_width + (cursor_idx - start) as u16;
+    (line, cursor_col)
+}
+
+fn field_paragraph(
+    label: &str,
+    field: &TextField,
+    _active: bool,
+    width: u16,
+    max_lines: u16,
+) -> (Vec<Line<'static>>, (u16, u16)) {
+    let label_width = label.chars().count() as u16;
+    let cont_width = width.saturating_sub(label_width).max(1) as usize;
+    let max_lines = max_lines.max(1) as usize;
+
+    let chars: Vec<char> = field.value.chars().collect();
+    let total = chars.len();
+    let cursor_idx = field.value[..field.cursor].chars().count();
+
+    let mut num_lines = if total == 0 { 1 } else { total.div_ceil(cont_width) };
+    if total > 0 && cursor_idx == total && total.is_multiple_of(cont_width) {
+        num_lines += 1;
+    }
+
+    let cursor_line = cursor_idx / cont_width;
+    let cursor_col = cursor_idx % cont_width;
+
+    let start_line = if num_lines > max_lines {
+        cursor_line.saturating_sub(max_lines - 1).min(num_lines - max_lines)
+    } else {
+        0
+    };
+    let end_line = (start_line + max_lines).min(num_lines);
+
+    let mut lines = Vec::new();
+    for i in start_line..end_line {
+        let line_start = (i * cont_width).min(total);
+        let line_end = (line_start + cont_width).min(total);
+        let line_chars: Vec<char> = chars[line_start..line_end].to_vec();
+
+        let prefix = if i == 0 {
+            Span::raw(label.to_string())
+        } else {
+            Span::raw(" ".repeat(label_width as usize))
+        };
+
+        let mut text: String = line_chars.into_iter().collect();
+        while text.chars().count() < cont_width {
+            text.push(' ');
+        }
+        lines.push(Line::from(vec![prefix, Span::raw(text)]));
+    }
+
+    let cursor_pos = (
+        label_width + cursor_col as u16,
+        (cursor_line - start_line) as u16,
+    );
+    (lines, cursor_pos)
+}
+
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
     let vertical = Layout::default()
         .direction(Direction::Vertical)
@@ -487,6 +848,14 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(vertical[1])[1]
+}
+
+fn centered_rect_lines(percent_x: u16, height: u16, area: Rect) -> Rect {
+    let width = area.width * percent_x / 100;
+    let height = height.min(area.height);
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 2;
+    Rect { x, y, width, height }
 }
 
 fn draw_help(frame: &mut Frame, app: &App, area: Rect) {

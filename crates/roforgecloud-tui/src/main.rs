@@ -17,8 +17,10 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
 use app::{
-    Action, App, MessagingField, PendingConfirm, Screen, SERVICE_ACCOUNT, SERVICE_DATA_STORES,
-    SERVICE_MESSAGING, UNIVERSE_CHOICE_ENTER_ID, UNIVERSE_CHOICE_ITEMS, UNIVERSE_CHOICE_LIST_ALL,
+    Action, App, EntriesCreateField, MessagingField, OrderedCreateField, OrderedInputField,
+    PendingConfirm, Screen, TextField, SERVICE_ACCOUNT, SERVICE_DATA_STORES, SERVICE_MESSAGING,
+    SERVICE_ORDERED_DATA_STORES, UNIVERSE_CHOICE_ENTER_ID, UNIVERSE_CHOICE_ITEMS,
+    UNIVERSE_CHOICE_LIST_ALL,
 };
 use roforgecloud_core::auth;
 use roforgecloud_core::oauth::{self, OAuthClient};
@@ -168,10 +170,19 @@ async fn run<B: ratatui::backend::Backend + io::Write>(
             Screen::Entries => handle_entries_key(app, key.code),
             Screen::Value => handle_value_key(app, key.code, key.modifiers),
             Screen::Messaging => handle_messaging_key(app, key.code),
+            Screen::OrderedStoreInput => handle_ordered_store_input_key(app, key.code),
+            Screen::OrderedEntries => handle_ordered_entries_key(app, key.code),
+            Screen::OrderedValue => handle_ordered_value_key(app, key.code),
         };
 
         if let Some(Action::EditValueExternal) = action {
             edit_value_external(terminal, app).await?;
+        } else if let Some(Action::EditTreeValueExternal) = action {
+            edit_tree_value_external(terminal, app).await?;
+        } else if let Some(Action::CreateEntryExternal) = action {
+            create_entry_external(terminal, app).await?;
+        } else if let Some(Action::CreateOrderedEntryExternal) = action {
+            create_ordered_entry_external(terminal, app).await?;
         } else if let Some(Action::LoadUniverses) = action {
             let needs_login = match &app.oauth {
                 Some(oauth) => auth::cached_access_token(oauth).await.is_none(),
@@ -201,12 +212,14 @@ async fn run<B: ratatui::backend::Backend + io::Write>(
     Ok(())
 }
 
-async fn edit_value_external<B: ratatui::backend::Backend + io::Write>(
+async fn run_editor<B: ratatui::backend::Backend + io::Write>(
     terminal: &mut Terminal<B>,
     app: &mut App,
-) -> anyhow::Result<()> {
-    let path = std::env::temp_dir().join(format!("roforgecloud-{}.json", std::process::id()));
-    std::fs::write(&path, &app.value_text)?;
+    initial: &str,
+    suffix: &str,
+) -> anyhow::Result<Option<String>> {
+    let path = std::env::temp_dir().join(format!("roforgecloud-{}{suffix}", std::process::id()));
+    std::fs::write(&path, initial)?;
 
     let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
 
@@ -224,20 +237,31 @@ async fn edit_value_external<B: ratatui::backend::Backend + io::Write>(
         Err(err) => {
             let _ = std::fs::remove_file(&path);
             app.status = format!("error: failed to launch '{editor}': {err}");
-            return Ok(());
+            return Ok(None);
         }
     };
 
     if !status.success() {
         let _ = std::fs::remove_file(&path);
         app.status = format!("error: '{editor}' exited with {status}");
-        return Ok(());
+        return Ok(None);
     }
 
     let edited = std::fs::read_to_string(&path).unwrap_or_default();
     let _ = std::fs::remove_file(&path);
+    Ok(Some(edited))
+}
 
-    if edited == app.value_text {
+async fn edit_value_external<B: ratatui::backend::Backend + io::Write>(
+    terminal: &mut Terminal<B>,
+    app: &mut App,
+) -> anyhow::Result<()> {
+    let initial = app.value_text.clone();
+    let Some(edited) = run_editor(terminal, app, &initial, ".json").await? else {
+        return Ok(());
+    };
+
+    if edited == initial {
         app.status = "no changes".to_string();
         return Ok(());
     }
@@ -246,6 +270,130 @@ async fn edit_value_external<B: ratatui::backend::Backend + io::Write>(
     app.loading = true;
     terminal.draw(|frame| ui::draw(frame, app))?;
     app.perform(Action::SaveValue).await;
+    app.loading = false;
+
+    Ok(())
+}
+
+async fn edit_tree_value_external<B: ratatui::backend::Backend + io::Write>(
+    terminal: &mut Terminal<B>,
+    app: &mut App,
+) -> anyhow::Result<()> {
+    let Some(tree) = &app.value_tree else {
+        return Ok(());
+    };
+    let rows = json_tree::flatten(tree);
+    let Some(current) = rows.get(app.tree_cursor) else {
+        return Ok(());
+    };
+    let key = current.key.clone();
+    let Some(value) = app.tree_current_value() else {
+        return Ok(());
+    };
+
+    let initial = match &key {
+        Some(key) => {
+            let mut obj = serde_json::Map::new();
+            obj.insert(key.clone(), value);
+            serde_json::to_string_pretty(&serde_json::Value::Object(obj))?
+        }
+        None => serde_json::to_string_pretty(&value)?,
+    };
+
+    let Some(edited) = run_editor(terminal, app, &initial, ".json").await? else {
+        return Ok(());
+    };
+    let edited = edited.trim();
+
+    if edited == initial.trim() {
+        app.status = "no changes".to_string();
+        return Ok(());
+    }
+
+    if key.is_some() {
+        match serde_json::from_str::<serde_json::Value>(edited) {
+            Ok(serde_json::Value::Object(map)) if map.len() == 1 => {
+                let (key, value) = map.into_iter().next().unwrap();
+                app.tree_replace_value(Some(key), value);
+            }
+            _ => {
+                app.status = "error: expected a single-key JSON object".to_string();
+            }
+        }
+    } else {
+        let value = serde_json::from_str::<serde_json::Value>(edited)
+            .unwrap_or_else(|_| serde_json::Value::String(edited.to_string()));
+        app.tree_replace_value(None, value);
+    }
+    Ok(())
+}
+
+async fn create_entry_external<B: ratatui::backend::Backend + io::Write>(
+    terminal: &mut Terminal<B>,
+    app: &mut App,
+) -> anyhow::Result<()> {
+    let template = "{\n  \"id\": \"\",\n  \"value\": null\n}\n";
+    let Some(edited) = run_editor(terminal, app, template, "-create.json").await? else {
+        return Ok(());
+    };
+
+    let parsed: serde_json::Value = match serde_json::from_str(&edited) {
+        Ok(value) => value,
+        Err(err) => {
+            app.status = format!("error: invalid JSON: {err}");
+            return Ok(());
+        }
+    };
+    let Some(id) = parsed.get("id").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) else {
+        app.status = "error: \"id\" field must be a non-empty string".to_string();
+        return Ok(());
+    };
+    let value = parsed.get("value").cloned().unwrap_or(serde_json::Value::Null);
+
+    app.entries_create_id.set(id);
+    app.entries_create_value.set(serde_json::to_string(&value)?);
+    app.entries_create_active = false;
+
+    app.loading = true;
+    terminal.draw(|frame| ui::draw(frame, app))?;
+    app.perform(Action::CreateEntry).await;
+    app.loading = false;
+
+    Ok(())
+}
+
+async fn create_ordered_entry_external<B: ratatui::backend::Backend + io::Write>(
+    terminal: &mut Terminal<B>,
+    app: &mut App,
+) -> anyhow::Result<()> {
+    let template = "{\n  \"id\": \"\",\n  \"value\": 0\n}\n";
+    let Some(edited) = run_editor(terminal, app, template, "-create-ordered.json").await? else {
+        return Ok(());
+    };
+
+    let parsed: serde_json::Value = match serde_json::from_str(&edited) {
+        Ok(value) => value,
+        Err(err) => {
+            app.status = format!("error: invalid JSON: {err}");
+            return Ok(());
+        }
+    };
+    let Some(id) = parsed.get("id").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) else {
+        app.status = "error: \"id\" field must be a non-empty string".to_string();
+        return Ok(());
+    };
+    let Some(value) = parsed.get("value").and_then(|v| v.as_f64()) else {
+        app.status = "error: \"value\" field must be a number".to_string();
+        return Ok(());
+    };
+
+    app.ordered_create_id.set(id);
+    app.ordered_create_value.set(value.to_string());
+    app.ordered_create_active = false;
+
+    app.loading = true;
+    terminal.draw(|frame| ui::draw(frame, app))?;
+    app.perform(Action::CreateOrderedEntry).await;
     app.loading = false;
 
     Ok(())
@@ -285,6 +433,14 @@ fn enter_service(app: &mut App) -> Option<Action> {
             app.resolve_current_universe_name();
             None
         }
+        SERVICE_ORDERED_DATA_STORES => {
+            app.ordered_data_store_id.clear();
+            app.ordered_scope.set("global");
+            app.ordered_input_field = OrderedInputField::StoreId;
+            app.status.clear();
+            app.screen = Screen::OrderedStoreInput;
+            None
+        }
         _ => None,
     }
 }
@@ -298,6 +454,40 @@ fn move_up(selected: &mut usize) {
 fn move_down(selected: &mut usize, len: usize) {
     if *selected + 1 < len {
         *selected += 1;
+    }
+}
+
+fn handle_text_field_key(field: &mut TextField, code: KeyCode, accept: impl Fn(char) -> bool) -> bool {
+    match code {
+        KeyCode::Char(c) if accept(c) => {
+            field.insert(c);
+            true
+        }
+        KeyCode::Backspace => {
+            field.backspace();
+            true
+        }
+        KeyCode::Delete => {
+            field.delete();
+            true
+        }
+        KeyCode::Left => {
+            field.left();
+            true
+        }
+        KeyCode::Right => {
+            field.right();
+            true
+        }
+        KeyCode::Home => {
+            field.home();
+            true
+        }
+        KeyCode::End => {
+            field.end();
+            true
+        }
+        _ => false,
     }
 }
 
@@ -343,6 +533,12 @@ fn handle_pending_confirm(app: &mut App, code: KeyCode) -> Option<Option<Action>
         (PendingConfirm::BulkDeleteEntries, KeyCode::Char('d')) => {
             Some(Some(Action::BulkDeleteEntries))
         }
+        (PendingConfirm::DeleteOrderedEntry, KeyCode::Char('d')) => {
+            Some(Some(Action::DeleteOrderedEntry))
+        }
+        (PendingConfirm::BulkDeleteOrderedEntries, KeyCode::Char('d')) => {
+            Some(Some(Action::BulkDeleteOrderedEntries))
+        }
         (PendingConfirm::Quit, KeyCode::Char('q')) => {
             app.should_quit = true;
             Some(None)
@@ -351,6 +547,7 @@ fn handle_pending_confirm(app: &mut App, code: KeyCode) -> Option<Option<Action>
             app.exit_tree_mode();
             Some(None)
         }
+        (PendingConfirm::TreeRefresh, KeyCode::Char('r')) => Some(Some(Action::RefreshTree)),
         _ => {
             app.status.clear();
             Some(None)
@@ -468,7 +665,6 @@ const UNIVERSE_SELECT_KEYS: &[KeyAction] = &[
         hint: |_| Some("/: search"),
         handler: |app| {
             app.universe_search_active = true;
-            app.status = "search: type to filter by id or name, enter/esc to confirm".to_string();
             None
         },
     },
@@ -500,15 +696,11 @@ fn handle_universe_select_key(app: &mut App, code: KeyCode) -> Option<Action> {
                 app.universe_search_active = false;
                 app.status.clear();
             }
-            KeyCode::Backspace => {
-                app.universe_search.pop();
-                app.universe_select_selected = 0;
+            _ => {
+                if handle_text_field_key(&mut app.universe_search, code, |_| true) {
+                    app.universe_select_selected = 0;
+                }
             }
-            KeyCode::Char(c) => {
-                app.universe_search.push(c);
-                app.universe_select_selected = 0;
-            }
-            _ => {}
         }
         return None;
     }
@@ -523,7 +715,7 @@ fn handle_universe_select_key(app: &mut App, code: KeyCode) -> Option<Action> {
     }
 
     if matches!(code, KeyCode::Esc | KeyCode::Backspace | KeyCode::Char('h')) {
-        if !app.universe_search.is_empty() {
+        if !app.universe_search.value.is_empty() {
             app.universe_search.clear();
             app.universe_select_selected = 0;
             app.status.clear();
@@ -544,17 +736,9 @@ fn handle_universe_select_key(app: &mut App, code: KeyCode) -> Option<Action> {
 
 fn handle_universe_input_key(app: &mut App, code: KeyCode) -> Option<Action> {
     match code {
-        KeyCode::Char(c) if c.is_ascii_digit() => {
-            app.universe_input.push(c);
-            None
-        }
-        KeyCode::Backspace => {
-            if app.universe_input.is_empty() {
-                app.screen = Screen::UniverseChoice;
-                app.status.clear();
-            } else {
-                app.universe_input.pop();
-            }
+        KeyCode::Backspace if app.universe_input.value.is_empty() => {
+            app.screen = Screen::UniverseChoice;
+            app.status.clear();
             None
         }
         KeyCode::Esc => {
@@ -563,31 +747,22 @@ fn handle_universe_input_key(app: &mut App, code: KeyCode) -> Option<Action> {
             None
         }
         KeyCode::Enter => {
-            let Ok(id) = app.universe_input.parse::<u64>() else {
+            let Ok(id) = app.universe_input.value.parse::<u64>() else {
                 return None;
             };
             app.universe_id = id;
             enter_service(app)
         }
-        _ => None,
+        _ => {
+            handle_text_field_key(&mut app.universe_input, code, |c| c.is_ascii_digit());
+            None
+        }
     }
 }
 
 fn handle_messaging_key(app: &mut App, code: KeyCode) -> Option<Action> {
-    let field = match app.messaging_field {
-        MessagingField::Topic => &mut app.messaging_topic,
-        MessagingField::Message => &mut app.messaging_message,
-    };
     match code {
-        KeyCode::Char(c) => {
-            field.push(c);
-            None
-        }
-        KeyCode::Backspace => {
-            field.pop();
-            None
-        }
-        KeyCode::Tab => {
+        KeyCode::Tab | KeyCode::BackTab => {
             app.messaging_field = match app.messaging_field {
                 MessagingField::Topic => MessagingField::Message,
                 MessagingField::Message => MessagingField::Topic,
@@ -600,7 +775,14 @@ fn handle_messaging_key(app: &mut App, code: KeyCode) -> Option<Action> {
             app.status.clear();
             None
         }
-        _ => None,
+        _ => {
+            let field = match app.messaging_field {
+                MessagingField::Topic => &mut app.messaging_topic,
+                MessagingField::Message => &mut app.messaging_message,
+            };
+            handle_text_field_key(field, code, |_| true);
+            None
+        }
     }
 }
 
@@ -613,9 +795,16 @@ struct KeyAction {
 const STORES_KEYS: &[KeyAction] = &[
     KeyAction {
         keys: &[KeyCode::Enter, KeyCode::Char('l')],
-        hint: |_| Some("enter/l: open"),
+        hint: |app| match app.stores.get(app.stores_selected) {
+            Some(store) if store.state.as_deref().is_some_and(|s| s != "ACTIVE") => None,
+            Some(_) => Some("enter/l: open"),
+            None => None,
+        },
         handler: |app| {
             let store = app.stores.get(app.stores_selected)?;
+            if store.state.as_deref().is_some_and(|s| s != "ACTIVE") {
+                return None;
+            }
             app.data_store_id = store.id.clone();
             app.entries_next_page_token = None;
             app.screen = Screen::Entries;
@@ -642,6 +831,15 @@ const STORES_KEYS: &[KeyAction] = &[
         keys: &[KeyCode::Char('r')],
         hint: |_| Some("r: refresh"),
         handler: |_| Some(Action::LoadStores),
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('c')],
+        hint: |_| Some("c: create entry in new store"),
+        handler: |app| {
+            app.stores_new_id.clear();
+            app.stores_new_active = true;
+            None
+        },
     },
     KeyAction {
         keys: &[KeyCode::Char('d')],
@@ -705,7 +903,46 @@ pub(crate) fn stores_hints(app: &App) -> String {
         .join("   ")
 }
 
+fn handle_stores_new_key(app: &mut App, code: KeyCode) -> Option<Action> {
+    match code {
+        KeyCode::Enter => {
+            let id = app.stores_new_id.value.trim().to_string();
+            if id.is_empty() {
+                return None;
+            }
+            app.stores_new_active = false;
+            app.data_store_id = id;
+            app.entries.clear();
+            app.entries_selected = 0;
+            app.entries_next_page_token = None;
+            app.entries_page_tokens = vec![None];
+            app.entries_marked.clear();
+            app.entries_search.clear();
+            app.entries_create_id.clear();
+            app.entries_create_value.clear();
+            app.entries_create_field = EntriesCreateField::Id;
+            app.entries_create_active = true;
+            app.status.clear();
+            app.screen = Screen::Entries;
+            None
+        }
+        KeyCode::Esc => {
+            app.stores_new_active = false;
+            app.status.clear();
+            None
+        }
+        _ => {
+            handle_text_field_key(&mut app.stores_new_id, code, |_| true);
+            None
+        }
+    }
+}
+
 fn handle_stores_key(app: &mut App, code: KeyCode) -> Option<Action> {
+    if app.stores_new_active {
+        return handle_stores_new_key(app, code);
+    }
+
     if let Some(result) = handle_pending_confirm(app, code) {
         return result;
     }
@@ -750,8 +987,15 @@ const ENTRIES_KEYS: &[KeyAction] = &[
         hint: |_| Some("/: search"),
         handler: |app| {
             app.entries_search_active = true;
-            app.status =
-                "search: type to filter by id or username, enter/esc to confirm".to_string();
+            app.status = "loading all entries for search...".to_string();
+            Some(Action::LoadAllEntriesForSearch)
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('c')],
+        hint: |_| Some("c: create"),
+        handler: |app| {
+            app.entries_create_choosing = true;
             None
         },
     },
@@ -815,24 +1059,67 @@ pub(crate) fn entries_hints(app: &App) -> String {
         .join("   ")
 }
 
+fn handle_entries_create_key(app: &mut App, code: KeyCode) -> Option<Action> {
+    match code {
+        KeyCode::Tab | KeyCode::BackTab => {
+            app.entries_create_field = match app.entries_create_field {
+                EntriesCreateField::Id => EntriesCreateField::Value,
+                EntriesCreateField::Value => EntriesCreateField::Id,
+            };
+            None
+        }
+        KeyCode::Enter => Some(Action::CreateEntry),
+        KeyCode::Esc => {
+            app.entries_create_active = false;
+            app.status.clear();
+            None
+        }
+        _ => {
+            let field = match app.entries_create_field {
+                EntriesCreateField::Id => &mut app.entries_create_id,
+                EntriesCreateField::Value => &mut app.entries_create_value,
+            };
+            handle_text_field_key(field, code, |_| true);
+            None
+        }
+    }
+}
+
 fn handle_entries_key(app: &mut App, code: KeyCode) -> Option<Action> {
+    if app.entries_create_active {
+        return handle_entries_create_key(app, code);
+    }
+
+    if app.entries_create_choosing {
+        app.entries_create_choosing = false;
+        return match code {
+            KeyCode::Char('n') => {
+                app.entries_create_id.clear();
+                app.entries_create_value.clear();
+                app.entries_create_field = EntriesCreateField::Id;
+                app.entries_create_active = true;
+                None
+            }
+            KeyCode::Char('e') => Some(Action::CreateEntryExternal),
+            _ => None,
+        };
+    }
+
     if app.entries_search_active {
-        match code {
+        return match code {
             KeyCode::Enter | KeyCode::Esc => {
                 app.entries_search_active = false;
+                app.entries_search.clear();
                 app.status.clear();
+                Some(Action::RefreshEntries)
             }
-            KeyCode::Backspace => {
-                app.entries_search.pop();
-                app.entries_selected = 0;
+            _ => {
+                if handle_text_field_key(&mut app.entries_search, code, |_| true) {
+                    app.entries_selected = 0;
+                }
+                None
             }
-            KeyCode::Char(c) => {
-                app.entries_search.push(c);
-                app.entries_selected = 0;
-            }
-            _ => {}
-        }
-        return None;
+        };
     }
 
     if let Some(result) = handle_pending_confirm(app, code) {
@@ -849,7 +1136,7 @@ fn handle_entries_key(app: &mut App, code: KeyCode) -> Option<Action> {
     }
 
     if matches!(code, KeyCode::Esc | KeyCode::Backspace | KeyCode::Char('h')) {
-        if !app.entries_search.is_empty() {
+        if !app.entries_search.value.is_empty() {
             app.entries_search.clear();
             app.entries_selected = 0;
             app.status.clear();
@@ -857,7 +1144,7 @@ fn handle_entries_key(app: &mut App, code: KeyCode) -> Option<Action> {
         }
         app.screen = Screen::Stores;
         app.status.clear();
-        return None;
+        return Some(Action::LoadStores);
     }
 
     for action in ENTRIES_KEYS {
@@ -994,7 +1281,7 @@ const TREE_KEYS: &[KeyAction] = &[
     },
     KeyAction {
         keys: &[KeyCode::Enter],
-        hint: |_| Some("enter: edit value"),
+        hint: |_| None,
         handler: |app| {
             app.tree_edit_leaf();
             None
@@ -1006,6 +1293,42 @@ const TREE_KEYS: &[KeyAction] = &[
         handler: |app| {
             app.arm_confirm(PendingConfirm::DeleteEntry);
             None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('a')],
+        hint: |_| Some("a: add entry"),
+        handler: |app| {
+            app.tree_add_entry();
+            None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('x')],
+        hint: |_| Some("x: delete node"),
+        handler: |app| {
+            app.tree_delete_current();
+            None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('e')],
+        hint: |_| Some("e: edit"),
+        handler: |app| {
+            app.tree_pending_leader = true;
+            None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('r')],
+        hint: |_| Some("r: refresh"),
+        handler: |app| {
+            if app.tree_dirty {
+                app.arm_confirm(PendingConfirm::TreeRefresh);
+                None
+            } else {
+                Some(Action::RefreshTree)
+            }
         },
     },
     KeyAction {
@@ -1030,16 +1353,364 @@ pub(crate) fn tree_hints(app: &App) -> String {
         .join("   ")
 }
 
+fn handle_ordered_store_input_key(app: &mut App, code: KeyCode) -> Option<Action> {
+    match code {
+        KeyCode::Tab | KeyCode::BackTab => {
+            app.ordered_input_field = match app.ordered_input_field {
+                OrderedInputField::StoreId => OrderedInputField::Scope,
+                OrderedInputField::Scope => OrderedInputField::StoreId,
+            };
+            None
+        }
+        KeyCode::Esc => {
+            app.screen = Screen::UniverseChoice;
+            app.status.clear();
+            None
+        }
+        KeyCode::Backspace
+            if app.ordered_input_field == OrderedInputField::StoreId
+                && app.ordered_data_store_id.value.is_empty() =>
+        {
+            app.screen = Screen::UniverseChoice;
+            app.status.clear();
+            None
+        }
+        KeyCode::Enter => {
+            if app.ordered_data_store_id.value.is_empty() {
+                return None;
+            }
+            if app.ordered_scope.value.is_empty() {
+                app.ordered_scope.set("global");
+            }
+            app.ordered_entries_next_page_token = None;
+            app.screen = Screen::OrderedEntries;
+            Some(Action::LoadOrderedEntries)
+        }
+        _ => {
+            let field = match app.ordered_input_field {
+                OrderedInputField::StoreId => &mut app.ordered_data_store_id,
+                OrderedInputField::Scope => &mut app.ordered_scope,
+            };
+            handle_text_field_key(field, code, |_| true);
+            None
+        }
+    }
+}
+
+const ORDERED_ENTRIES_KEYS: &[KeyAction] = &[
+    KeyAction {
+        keys: &[KeyCode::Char('n')],
+        hint: |app| app.ordered_entries_next_page_token.is_some().then_some("n: next page"),
+        handler: |_| Some(Action::LoadNextOrderedEntriesPage),
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('p')],
+        hint: |app| (app.ordered_entries_page_tokens.len() > 1).then_some("p: prev page"),
+        handler: |_| Some(Action::LoadPrevOrderedEntriesPage),
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('r')],
+        hint: |_| Some("r: refresh"),
+        handler: |_| Some(Action::RefreshOrderedEntries),
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('/')],
+        hint: |_| Some("/: search"),
+        handler: |app| {
+            app.ordered_entries_search_active = true;
+            app.status = "loading all entries for search...".to_string();
+            Some(Action::LoadAllOrderedEntriesForSearch)
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('c')],
+        hint: |_| Some("c: create"),
+        handler: |app| {
+            app.ordered_create_choosing = true;
+            None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char(' ')],
+        hint: |_| Some("space: select"),
+        handler: |app| {
+            app.toggle_ordered_entry_mark();
+            None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('a')],
+        hint: |_| Some("a: select all"),
+        handler: |app| {
+            app.toggle_select_all_ordered_visible();
+            None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('d')],
+        hint: |app| {
+            if app.visible_ordered_entry_indices().is_empty() && app.ordered_entries_marked.is_empty() {
+                None
+            } else if app.ordered_entries_marked.is_empty() {
+                Some("d: delete")
+            } else {
+                Some("d: delete (selected)")
+            }
+        },
+        handler: |app| {
+            if !app.ordered_entries_marked.is_empty() {
+                app.arm_confirm(PendingConfirm::BulkDeleteOrderedEntries);
+                return None;
+            }
+            if app.visible_ordered_entry_indices().is_empty() {
+                return None;
+            }
+            app.arm_confirm(PendingConfirm::DeleteOrderedEntry);
+            None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Enter, KeyCode::Char('l')],
+        hint: |_| Some("enter/l: view"),
+        handler: |app| {
+            if app.visible_ordered_entry_indices().is_empty() {
+                return None;
+            }
+            app.screen = Screen::OrderedValue;
+            Some(Action::LoadOrderedValue)
+        },
+    },
+];
+
+pub(crate) fn ordered_entries_hints(app: &App) -> String {
+    ORDERED_ENTRIES_KEYS
+        .iter()
+        .filter_map(|action| (action.hint)(app))
+        .collect::<Vec<_>>()
+        .join("   ")
+}
+
+fn is_numeric_input_char(c: char) -> bool {
+    c.is_ascii_digit() || c == '.' || c == '-'
+}
+
+fn handle_ordered_create_key(app: &mut App, code: KeyCode) -> Option<Action> {
+    match code {
+        KeyCode::Tab | KeyCode::BackTab => {
+            app.ordered_create_field = match app.ordered_create_field {
+                OrderedCreateField::Id => OrderedCreateField::Value,
+                OrderedCreateField::Value => OrderedCreateField::Id,
+            };
+            None
+        }
+        KeyCode::Enter => Some(Action::CreateOrderedEntry),
+        KeyCode::Esc => {
+            app.ordered_create_active = false;
+            app.status.clear();
+            None
+        }
+        _ => {
+            match app.ordered_create_field {
+                OrderedCreateField::Id => handle_text_field_key(&mut app.ordered_create_id, code, |_| true),
+                OrderedCreateField::Value => {
+                    handle_text_field_key(&mut app.ordered_create_value, code, is_numeric_input_char)
+                }
+            };
+            None
+        }
+    }
+}
+
+fn handle_ordered_entries_key(app: &mut App, code: KeyCode) -> Option<Action> {
+    if app.ordered_create_active {
+        return handle_ordered_create_key(app, code);
+    }
+
+    if app.ordered_create_choosing {
+        app.ordered_create_choosing = false;
+        return match code {
+            KeyCode::Char('n') => {
+                app.ordered_create_id.clear();
+                app.ordered_create_value.clear();
+                app.ordered_create_field = OrderedCreateField::Id;
+                app.ordered_create_active = true;
+                None
+            }
+            KeyCode::Char('e') => Some(Action::CreateOrderedEntryExternal),
+            _ => None,
+        };
+    }
+
+    if app.ordered_entries_search_active {
+        return match code {
+            KeyCode::Enter | KeyCode::Esc => {
+                app.ordered_entries_search_active = false;
+                app.ordered_entries_search.clear();
+                app.status.clear();
+                Some(Action::RefreshOrderedEntries)
+            }
+            _ => {
+                if handle_text_field_key(&mut app.ordered_entries_search, code, |_| true) {
+                    app.ordered_entries_selected = 0;
+                }
+                None
+            }
+        };
+    }
+
+    if let Some(result) = handle_pending_confirm(app, code) {
+        return result;
+    }
+
+    let visible = app.visible_ordered_entry_indices().len();
+
+    if let Some(result) = list_nav_key(code, &mut app.ordered_entries_selected, visible) {
+        return result;
+    }
+    if let Some(result) = quit_key(code, app) {
+        return result;
+    }
+
+    if matches!(code, KeyCode::Esc | KeyCode::Backspace | KeyCode::Char('h')) {
+        if !app.ordered_entries_search.value.is_empty() {
+            app.ordered_entries_search.clear();
+            app.ordered_entries_selected = 0;
+            app.status.clear();
+            return None;
+        }
+        app.screen = Screen::OrderedStoreInput;
+        app.status.clear();
+        return None;
+    }
+
+    for action in ORDERED_ENTRIES_KEYS {
+        if action.keys.contains(&code) {
+            return (action.handler)(app);
+        }
+    }
+    None
+}
+
+const ORDERED_VALUE_KEYS: &[KeyAction] = &[
+    KeyAction {
+        keys: &[KeyCode::Char('r')],
+        hint: |_| Some("r: refresh"),
+        handler: |_| Some(Action::LoadOrderedValue),
+    },
+    KeyAction {
+        keys: &[KeyCode::Enter, KeyCode::Char('e')],
+        hint: |_| Some("enter/e: edit"),
+        handler: |app| {
+            app.ordered_value_edit = app.ordered_value.to_string();
+            app.ordered_value_editing = true;
+            None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('i')],
+        hint: |_| Some("i: increment"),
+        handler: |app| {
+            app.ordered_increment_edit.clear();
+            app.ordered_increment_editing = true;
+            None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('d')],
+        hint: |_| Some("d: delete"),
+        handler: |app| {
+            app.arm_confirm(PendingConfirm::DeleteOrderedEntry);
+            None
+        },
+    },
+];
+
+pub(crate) fn ordered_value_hints(app: &App) -> String {
+    ORDERED_VALUE_KEYS
+        .iter()
+        .filter_map(|action| (action.hint)(app))
+        .collect::<Vec<_>>()
+        .join("   ")
+}
+
+fn handle_ordered_value_key(app: &mut App, code: KeyCode) -> Option<Action> {
+    if app.ordered_value_editing {
+        match code {
+            KeyCode::Esc => {
+                app.ordered_value_editing = false;
+                app.status.clear();
+            }
+            KeyCode::Enter => return Some(Action::SaveOrderedValue),
+            KeyCode::Backspace => {
+                app.ordered_value_edit.pop();
+            }
+            KeyCode::Char(c) if is_numeric_input_char(c) => app.ordered_value_edit.push(c),
+            _ => {}
+        }
+        return None;
+    }
+
+    if app.ordered_increment_editing {
+        match code {
+            KeyCode::Esc => {
+                app.ordered_increment_editing = false;
+                app.status.clear();
+            }
+            KeyCode::Enter => return Some(Action::IncrementOrderedEntry),
+            KeyCode::Backspace => {
+                app.ordered_increment_edit.pop();
+            }
+            KeyCode::Char(c) if is_numeric_input_char(c) => app.ordered_increment_edit.push(c),
+            _ => {}
+        }
+        return None;
+    }
+
+    if let Some(result) = handle_pending_confirm(app, code) {
+        return result;
+    }
+    if let Some(result) = quit_key(code, app) {
+        return result;
+    }
+    if let Some(result) = back_key(code, app, Screen::OrderedEntries) {
+        return result;
+    }
+
+    for action in ORDERED_VALUE_KEYS {
+        if action.keys.contains(&code) {
+            return (action.handler)(app);
+        }
+    }
+    None
+}
+
 fn handle_tree_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
+    if app.tree_editing_key {
+        match code {
+            KeyCode::Esc => app.tree_cancel_edit(),
+            KeyCode::Enter => app.tree_confirm_key(),
+            KeyCode::Tab | KeyCode::BackTab => {
+                app.tree_confirm_key();
+                app.tree_edit_leaf();
+            }
+            _ => {
+                handle_text_field_key(&mut app.tree_edit_key, code, |_| true);
+            }
+        }
+        return None;
+    }
+
     if app.tree_editing {
         match code {
             KeyCode::Esc => app.tree_cancel_edit(),
             KeyCode::Enter => app.tree_confirm_edit(),
-            KeyCode::Backspace => {
-                app.tree_edit_text.pop();
+            KeyCode::Tab | KeyCode::BackTab => {
+                app.tree_confirm_edit();
+                app.tree_edit_key_start();
             }
-            KeyCode::Char(c) => app.tree_edit_text.push(c),
-            _ => {}
+            _ => {
+                handle_text_field_key(&mut app.tree_edit_text, code, |_| true);
+            }
         }
         return None;
     }
@@ -1050,6 +1721,22 @@ fn handle_tree_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Opt
 
     if code == KeyCode::Char('s') && modifiers.contains(KeyModifiers::CONTROL) {
         return Some(Action::SaveTree);
+    }
+
+    if app.tree_pending_leader {
+        app.tree_pending_leader = false;
+        return match code {
+            KeyCode::Char('v') => {
+                app.tree_edit_leaf();
+                None
+            }
+            KeyCode::Char('k') => {
+                app.tree_edit_key_start();
+                None
+            }
+            KeyCode::Char('e') => Some(Action::EditTreeValueExternal),
+            _ => None,
+        };
     }
 
     for action in TREE_KEYS {

@@ -39,10 +39,10 @@ enum Command {
     #[command(subcommand)]
     Datastore(DatastoreCommand),
     #[command(subcommand)]
+    OrderedDatastore(OrderedDatastoreCommand),
+    #[command(subcommand)]
     Messaging(MessagingCommand),
-    /// Log in (or re-authorize) via OAuth.
     Login,
-    /// Revoke the cached OAuth session (forces a fresh login next time).
     Logout,
 }
 
@@ -55,6 +55,14 @@ enum DatastoreCommand {
         universe_id: u64,
         data_store_id: String,
         entry_id: String,
+        #[arg(long)]
+        scope: Option<String>,
+    },
+    Create {
+        universe_id: u64,
+        data_store_id: String,
+        entry_id: String,
+        value: String,
         #[arg(long)]
         scope: Option<String>,
     },
@@ -84,6 +92,60 @@ enum DatastoreCommand {
     ListScopes {
         universe_id: u64,
         data_store_id: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum OrderedDatastoreCommand {
+    List {
+        universe_id: u64,
+        ordered_data_store_id: String,
+        #[arg(long, default_value = "global")]
+        scope: String,
+        #[arg(long)]
+        order_by: Option<String>,
+        #[arg(long)]
+        filter: Option<String>,
+        #[arg(long)]
+        max_page_size: Option<u32>,
+    },
+    Create {
+        universe_id: u64,
+        ordered_data_store_id: String,
+        entry_id: String,
+        value: f64,
+        #[arg(long, default_value = "global")]
+        scope: String,
+    },
+    Get {
+        universe_id: u64,
+        ordered_data_store_id: String,
+        entry_id: String,
+        #[arg(long, default_value = "global")]
+        scope: String,
+    },
+    Update {
+        universe_id: u64,
+        ordered_data_store_id: String,
+        entry_id: String,
+        value: f64,
+        #[arg(long, default_value = "global")]
+        scope: String,
+    },
+    Delete {
+        universe_id: u64,
+        ordered_data_store_id: String,
+        entry_id: String,
+        #[arg(long, default_value = "global")]
+        scope: String,
+    },
+    Increment {
+        universe_id: u64,
+        ordered_data_store_id: String,
+        entry_id: String,
+        amount: f64,
+        #[arg(long, default_value = "global")]
+        scope: String,
     },
 }
 
@@ -150,6 +212,25 @@ async fn main() -> anyhow::Result<()> {
                     .await?;
                 println!("{}", serde_json::to_string_pretty(&value)?);
             }
+            DatastoreCommand::Create {
+                universe_id,
+                data_store_id,
+                entry_id,
+                value,
+                scope,
+            } => {
+                let value: serde_json::Value = serde_json::from_str(&value)?;
+                client
+                    .create_entry(
+                        universe_id,
+                        &data_store_id,
+                        &entry_id,
+                        scope.as_deref(),
+                        &value,
+                    )
+                    .await?;
+                println!("ok");
+            }
             DatastoreCommand::Set {
                 universe_id,
                 data_store_id,
@@ -165,6 +246,7 @@ async fn main() -> anyhow::Result<()> {
                         &entry_id,
                         scope.as_deref(),
                         &value,
+                        None,
                     )
                     .await?;
                 println!("ok");
@@ -230,6 +312,107 @@ async fn main() -> anyhow::Result<()> {
                 for scope in scopes {
                     println!("{scope}");
                 }
+            }
+        },
+        Command::OrderedDatastore(cmd) => match cmd {
+            OrderedDatastoreCommand::List {
+                universe_id,
+                ordered_data_store_id,
+                scope,
+                order_by,
+                filter,
+                max_page_size,
+            } => {
+                let result = client
+                    .list_ordered_entries(
+                        universe_id,
+                        &ordered_data_store_id,
+                        &scope,
+                        order_by.as_deref(),
+                        filter.as_deref(),
+                        None,
+                        max_page_size,
+                    )
+                    .await?;
+                for entry in result.ordered_data_store_entries {
+                    println!("{}\t{}", entry.id, entry.value);
+                }
+            }
+            OrderedDatastoreCommand::Create {
+                universe_id,
+                ordered_data_store_id,
+                entry_id,
+                value,
+                scope,
+            } => {
+                let entry = client
+                    .create_ordered_entry(
+                        universe_id,
+                        &ordered_data_store_id,
+                        &scope,
+                        &entry_id,
+                        value,
+                    )
+                    .await?;
+                println!("{}", serde_json::to_string_pretty(&entry)?);
+            }
+            OrderedDatastoreCommand::Get {
+                universe_id,
+                ordered_data_store_id,
+                entry_id,
+                scope,
+            } => {
+                let entry = client
+                    .get_ordered_entry(universe_id, &ordered_data_store_id, &scope, &entry_id)
+                    .await?;
+                println!("{}", serde_json::to_string_pretty(&entry)?);
+            }
+            OrderedDatastoreCommand::Update {
+                universe_id,
+                ordered_data_store_id,
+                entry_id,
+                value,
+                scope,
+            } => {
+                let entry = client
+                    .update_ordered_entry(
+                        universe_id,
+                        &ordered_data_store_id,
+                        &scope,
+                        &entry_id,
+                        value,
+                    )
+                    .await?;
+                println!("{}", serde_json::to_string_pretty(&entry)?);
+            }
+            OrderedDatastoreCommand::Delete {
+                universe_id,
+                ordered_data_store_id,
+                entry_id,
+                scope,
+            } => {
+                client
+                    .delete_ordered_entry(universe_id, &ordered_data_store_id, &scope, &entry_id)
+                    .await?;
+                println!("ok");
+            }
+            OrderedDatastoreCommand::Increment {
+                universe_id,
+                ordered_data_store_id,
+                entry_id,
+                amount,
+                scope,
+            } => {
+                let entry = client
+                    .increment_ordered_entry(
+                        universe_id,
+                        &ordered_data_store_id,
+                        &scope,
+                        &entry_id,
+                        amount,
+                    )
+                    .await?;
+                println!("{}", serde_json::to_string_pretty(&entry)?);
             }
         },
         Command::Messaging(cmd) => match cmd {

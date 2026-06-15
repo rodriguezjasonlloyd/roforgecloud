@@ -74,6 +74,18 @@ impl JsonNode {
         }
     }
 
+    pub fn get(&self, path: &[usize]) -> Option<&JsonNode> {
+        let mut node = self;
+        for &idx in path {
+            node = match &node.value {
+                JsonNodeValue::Array(items) => items.get(idx)?,
+                JsonNodeValue::Object(items) => items.get(idx)?,
+                JsonNodeValue::Leaf(_) => return None,
+            };
+        }
+        Some(node)
+    }
+
     pub fn get_mut(&mut self, path: &[usize]) -> Option<&mut JsonNode> {
         let mut node = self;
         for &idx in path {
