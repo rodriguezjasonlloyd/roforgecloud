@@ -41,6 +41,8 @@ enum Command {
     #[command(subcommand)]
     OrderedDatastore(OrderedDatastoreCommand),
     #[command(subcommand)]
+    MemoryStore(MemoryStoreCommand),
+    #[command(subcommand)]
     Messaging(MessagingCommand),
     Login,
     Logout,
@@ -146,6 +148,80 @@ enum OrderedDatastoreCommand {
         amount: f64,
         #[arg(long, default_value = "global")]
         scope: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum MemoryStoreCommand {
+    #[command(subcommand)]
+    SortedMap(SortedMapCommand),
+    #[command(subcommand)]
+    Queue(QueueCommand),
+}
+
+#[derive(Subcommand)]
+enum SortedMapCommand {
+    List {
+        universe_id: u64,
+        sorted_map: String,
+        #[arg(long)]
+        max_page_size: Option<u32>,
+    },
+    Get {
+        universe_id: u64,
+        sorted_map: String,
+        item_id: String,
+    },
+    Create {
+        universe_id: u64,
+        sorted_map: String,
+        item_id: String,
+        value: String,
+        #[arg(long, default_value = "3600")]
+        ttl: u64,
+    },
+    Set {
+        universe_id: u64,
+        sorted_map: String,
+        item_id: String,
+        value: String,
+        #[arg(long, default_value = "3600")]
+        ttl: u64,
+    },
+    Delete {
+        universe_id: u64,
+        sorted_map: String,
+        item_id: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum QueueCommand {
+    Add {
+        universe_id: u64,
+        queue: String,
+        value: String,
+        #[arg(long)]
+        id: Option<String>,
+        #[arg(long)]
+        priority: Option<i64>,
+        #[arg(long, default_value = "3600")]
+        ttl: u64,
+    },
+    Read {
+        universe_id: u64,
+        queue: String,
+        #[arg(long, default_value = "10")]
+        count: u32,
+        #[arg(long, default_value = "30")]
+        invisibility_window: u32,
+        #[arg(long)]
+        all_or_nothing: bool,
+    },
+    Delete {
+        universe_id: u64,
+        queue: String,
+        item_id: String,
     },
 }
 
@@ -414,6 +490,102 @@ async fn main() -> anyhow::Result<()> {
                     .await?;
                 println!("{}", serde_json::to_string_pretty(&entry)?);
             }
+        },
+        Command::MemoryStore(cmd) => match cmd {
+            MemoryStoreCommand::SortedMap(cmd) => match cmd {
+                SortedMapCommand::List {
+                    universe_id,
+                    sorted_map,
+                    max_page_size,
+                } => {
+                    let result = client
+                        .list_sorted_map_items(universe_id, &sorted_map, None, max_page_size)
+                        .await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                }
+                SortedMapCommand::Get {
+                    universe_id,
+                    sorted_map,
+                    item_id,
+                } => {
+                    let item = client
+                        .get_sorted_map_item(universe_id, &sorted_map, &item_id)
+                        .await?;
+                    println!("{}", serde_json::to_string_pretty(&item)?);
+                }
+                SortedMapCommand::Create {
+                    universe_id,
+                    sorted_map,
+                    item_id,
+                    value,
+                    ttl,
+                } => {
+                    let value: serde_json::Value = serde_json::from_str(&value)?;
+                    let item = client
+                        .create_sorted_map_item(universe_id, &sorted_map, &item_id, &value, ttl)
+                        .await?;
+                    println!("{}", serde_json::to_string_pretty(&item)?);
+                }
+                SortedMapCommand::Set {
+                    universe_id,
+                    sorted_map,
+                    item_id,
+                    value,
+                    ttl,
+                } => {
+                    let value: serde_json::Value = serde_json::from_str(&value)?;
+                    let item = client
+                        .update_sorted_map_item(universe_id, &sorted_map, &item_id, &value, ttl, None)
+                        .await?;
+                    println!("{}", serde_json::to_string_pretty(&item)?);
+                }
+                SortedMapCommand::Delete {
+                    universe_id,
+                    sorted_map,
+                    item_id,
+                } => {
+                    client
+                        .delete_sorted_map_item(universe_id, &sorted_map, &item_id)
+                        .await?;
+                    println!("ok");
+                }
+            },
+            MemoryStoreCommand::Queue(cmd) => match cmd {
+                QueueCommand::Add {
+                    universe_id,
+                    queue,
+                    value,
+                    id,
+                    priority,
+                    ttl,
+                } => {
+                    let value: serde_json::Value = serde_json::from_str(&value)?;
+                    let item = client
+                        .add_queue_item(universe_id, &queue, id.as_deref(), &value, priority, ttl)
+                        .await?;
+                    println!("{}", serde_json::to_string_pretty(&item)?);
+                }
+                QueueCommand::Read {
+                    universe_id,
+                    queue,
+                    count,
+                    invisibility_window,
+                    all_or_nothing,
+                } => {
+                    let result = client
+                        .read_queue_items(universe_id, &queue, count, invisibility_window, all_or_nothing)
+                        .await?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                }
+                QueueCommand::Delete {
+                    universe_id,
+                    queue,
+                    item_id,
+                } => {
+                    client.delete_queue_item(universe_id, &queue, &item_id).await?;
+                    println!("ok");
+                }
+            },
         },
         Command::Messaging(cmd) => match cmd {
             MessagingCommand::Publish {

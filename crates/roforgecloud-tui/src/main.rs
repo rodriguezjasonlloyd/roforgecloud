@@ -17,10 +17,10 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
 use app::{
-    Action, App, EntriesCreateField, MessagingField, OrderedCreateField, OrderedInputField,
-    PendingConfirm, Screen, TextField, SERVICE_ACCOUNT, SERVICE_DATA_STORES, SERVICE_MESSAGING,
-    SERVICE_ORDERED_DATA_STORES, UNIVERSE_CHOICE_ENTER_ID, UNIVERSE_CHOICE_ITEMS,
-    UNIVERSE_CHOICE_LIST_ALL,
+    Action, App, EntriesCreateField, MemoryCreateField, MessagingField, OrderedCreateField,
+    OrderedInputField, PendingConfirm, Screen, TextField, TreeTarget, ValueSource, SERVICE_ACCOUNT,
+    SERVICE_DATA_STORES, SERVICE_MEMORY_STORES, SERVICE_MESSAGING, SERVICE_ORDERED_DATA_STORES,
+    UNIVERSE_CHOICE_ENTER_ID, UNIVERSE_CHOICE_ITEMS, UNIVERSE_CHOICE_LIST_ALL,
 };
 use roforgecloud_core::auth;
 use roforgecloud_core::oauth::{self, OAuthClient};
@@ -167,12 +167,14 @@ async fn run<B: ratatui::backend::Backend + io::Write>(
             Screen::UniverseSelect => handle_universe_select_key(app, key.code),
             Screen::UniverseInput => handle_universe_input_key(app, key.code),
             Screen::Stores => handle_stores_key(app, key.code),
-            Screen::Entries => handle_entries_key(app, key.code),
+            Screen::Entries => handle_entries_key(app, key.code, key.modifiers),
             Screen::Value => handle_value_key(app, key.code, key.modifiers),
             Screen::Messaging => handle_messaging_key(app, key.code),
             Screen::OrderedStoreInput => handle_ordered_store_input_key(app, key.code),
             Screen::OrderedEntries => handle_ordered_entries_key(app, key.code),
             Screen::OrderedValue => handle_ordered_value_key(app, key.code),
+            Screen::MemoryStoreInput => handle_memory_store_input_key(app, key.code),
+            Screen::MemoryStoreEntries => handle_memory_entries_key(app, key.code, key.modifiers),
         };
 
         if let Some(Action::EditValueExternal) = action {
@@ -183,6 +185,8 @@ async fn run<B: ratatui::backend::Backend + io::Write>(
             create_entry_external(terminal, app).await?;
         } else if let Some(Action::CreateOrderedEntryExternal) = action {
             create_ordered_entry_external(terminal, app).await?;
+        } else if let Some(Action::CreateMemoryItemExternal) = action {
+            create_memory_item_external(terminal, app).await?;
         } else if let Some(Action::LoadUniverses) = action {
             let needs_login = match &app.oauth {
                 Some(oauth) => auth::cached_access_token(oauth).await.is_none(),
@@ -399,6 +403,42 @@ async fn create_ordered_entry_external<B: ratatui::backend::Backend + io::Write>
     Ok(())
 }
 
+async fn create_memory_item_external<B: ratatui::backend::Backend + io::Write>(
+    terminal: &mut Terminal<B>,
+    app: &mut App,
+) -> anyhow::Result<()> {
+    let template = "{\n  \"id\": \"\",\n  \"value\": null,\n  \"ttl\": 3600\n}\n";
+    let Some(edited) = run_editor(terminal, app, template, "-create-memory.json").await? else {
+        return Ok(());
+    };
+
+    let parsed: serde_json::Value = match serde_json::from_str(&edited) {
+        Ok(value) => value,
+        Err(err) => {
+            app.status = format!("error: invalid JSON: {err}");
+            return Ok(());
+        }
+    };
+    let Some(id) = parsed.get("id").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) else {
+        app.status = "error: \"id\" field must be a non-empty string".to_string();
+        return Ok(());
+    };
+    let value = parsed.get("value").cloned().unwrap_or(serde_json::Value::Null);
+    let ttl = parsed.get("ttl").and_then(|v| v.as_u64()).unwrap_or(3600);
+
+    app.memory_create_id.set(id);
+    app.memory_create_value.set(serde_json::to_string(&value)?);
+    app.memory_create_ttl.set(ttl.to_string());
+    app.memory_create_active = false;
+
+    app.loading = true;
+    terminal.draw(|frame| ui::draw(frame, app))?;
+    app.perform(Action::CreateMemoryItem).await;
+    app.loading = false;
+
+    Ok(())
+}
+
 async fn perform_with_terminal_suspended<B: ratatui::backend::Backend + io::Write>(
     terminal: &mut Terminal<B>,
     app: &mut App,
@@ -439,6 +479,12 @@ fn enter_service(app: &mut App) -> Option<Action> {
             app.ordered_input_field = OrderedInputField::StoreId;
             app.status.clear();
             app.screen = Screen::OrderedStoreInput;
+            None
+        }
+        SERVICE_MEMORY_STORES => {
+            app.memory_sorted_map_input.clear();
+            app.status.clear();
+            app.screen = Screen::MemoryStoreInput;
             None
         }
         _ => None,
@@ -538,6 +584,10 @@ fn handle_pending_confirm(app: &mut App, code: KeyCode) -> Option<Option<Action>
         }
         (PendingConfirm::BulkDeleteOrderedEntries, KeyCode::Char('d')) => {
             Some(Some(Action::BulkDeleteOrderedEntries))
+        }
+        (PendingConfirm::DeleteMemoryItem, KeyCode::Char('d')) => Some(Some(Action::DeleteMemoryItem)),
+        (PendingConfirm::BulkDeleteMemoryItems, KeyCode::Char('d')) => {
+            Some(Some(Action::BulkDeleteMemoryItems))
         }
         (PendingConfirm::Quit, KeyCode::Char('q')) => {
             app.should_quit = true;
@@ -1059,7 +1109,49 @@ pub(crate) fn entries_hints(app: &App) -> String {
         .join("   ")
 }
 
-fn handle_entries_create_key(app: &mut App, code: KeyCode) -> Option<Action> {
+const ENTRIES_CREATE_KEYS: &[KeyAction] = &[
+    KeyAction {
+        keys: &[KeyCode::Tab, KeyCode::BackTab],
+        hint: |_| Some("tab: switch field"),
+        handler: |_| None,
+    },
+    KeyAction {
+        keys: &[KeyCode::Enter],
+        hint: |_| Some("enter: create"),
+        handler: |_| None,
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('t')],
+        hint: |app| {
+            (app.entries_create_field == EntriesCreateField::Value)
+                .then_some("ctrl+t: tree edit value")
+        },
+        handler: |_| None,
+    },
+    KeyAction {
+        keys: &[KeyCode::Esc],
+        hint: |_| Some("esc: cancel"),
+        handler: |_| None,
+    },
+];
+
+pub(crate) fn entries_create_hints(app: &App) -> String {
+    ENTRIES_CREATE_KEYS
+        .iter()
+        .filter_map(|action| (action.hint)(app))
+        .collect::<Vec<_>>()
+        .join("   ")
+}
+
+fn handle_entries_create_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
+    if app.entries_create_field == EntriesCreateField::Value
+        && code == KeyCode::Char('t')
+        && modifiers.contains(KeyModifiers::CONTROL)
+    {
+        app.enter_tree_mode_for(TreeTarget::EntriesCreate);
+        return None;
+    }
+
     match code {
         KeyCode::Tab | KeyCode::BackTab => {
             app.entries_create_field = match app.entries_create_field {
@@ -1085,9 +1177,13 @@ fn handle_entries_create_key(app: &mut App, code: KeyCode) -> Option<Action> {
     }
 }
 
-fn handle_entries_key(app: &mut App, code: KeyCode) -> Option<Action> {
+fn handle_entries_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
+    if app.tree_mode {
+        return handle_tree_key(app, code, modifiers);
+    }
+
     if app.entries_create_active {
-        return handle_entries_create_key(app, code);
+        return handle_entries_create_key(app, code, modifiers);
     }
 
     if app.entries_create_choosing {
@@ -1178,7 +1274,23 @@ const VALUE_KEYS: &[KeyAction] = &[
         keys: &[KeyCode::Char('d')],
         hint: |_| Some("d: delete"),
         handler: |app| {
-            app.arm_confirm(PendingConfirm::DeleteEntry);
+            let pending = match app.value_source {
+                ValueSource::DataStore => PendingConfirm::DeleteEntry,
+                ValueSource::MemoryStoreSortedMap => PendingConfirm::DeleteMemoryItem,
+            };
+            app.arm_confirm(pending);
+            None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('t')],
+        hint: |app| (app.value_source == ValueSource::MemoryStoreSortedMap).then_some("t: edit ttl"),
+        handler: |app| {
+            if app.value_source != ValueSource::MemoryStoreSortedMap {
+                return None;
+            }
+            app.memory_ttl_edit.set(app.memory_item_ttl_seconds.to_string());
+            app.memory_ttl_editing = true;
             None
         },
     },
@@ -1231,13 +1343,32 @@ fn handle_value_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Op
         return handle_tree_key(app, code, modifiers);
     }
 
+    if app.memory_ttl_editing {
+        return match code {
+            KeyCode::Enter => Some(Action::SaveMemoryTtl),
+            KeyCode::Esc => {
+                app.memory_ttl_editing = false;
+                app.status.clear();
+                None
+            }
+            _ => {
+                handle_text_field_key(&mut app.memory_ttl_edit, code, |c| c.is_ascii_digit());
+                None
+            }
+        };
+    }
+
     if let Some(result) = handle_pending_confirm(app, code) {
         return result;
     }
     if let Some(result) = quit_key(code, app) {
         return result;
     }
-    if let Some(result) = back_key(code, app, Screen::Entries) {
+    let back_screen = match app.value_source {
+        ValueSource::DataStore => Screen::Entries,
+        ValueSource::MemoryStoreSortedMap => Screen::MemoryStoreEntries,
+    };
+    if let Some(result) = back_key(code, app, back_screen) {
         return result;
     }
 
@@ -1289,9 +1420,16 @@ const TREE_KEYS: &[KeyAction] = &[
     },
     KeyAction {
         keys: &[KeyCode::Char('d')],
-        hint: |_| Some("d: delete entry"),
+        hint: |app| (app.tree_target == TreeTarget::Value).then_some("d: delete entry"),
         handler: |app| {
-            app.arm_confirm(PendingConfirm::DeleteEntry);
+            if app.tree_target != TreeTarget::Value {
+                return None;
+            }
+            let pending = match app.value_source {
+                ValueSource::DataStore => PendingConfirm::DeleteEntry,
+                ValueSource::MemoryStoreSortedMap => PendingConfirm::DeleteMemoryItem,
+            };
+            app.arm_confirm(pending);
             None
         },
     },
@@ -1321,8 +1459,11 @@ const TREE_KEYS: &[KeyAction] = &[
     },
     KeyAction {
         keys: &[KeyCode::Char('r')],
-        hint: |_| Some("r: refresh"),
+        hint: |app| (app.tree_target == TreeTarget::Value).then_some("r: refresh"),
         handler: |app| {
+            if app.tree_target != TreeTarget::Value {
+                return None;
+            }
             if app.tree_dirty {
                 app.arm_confirm(PendingConfirm::TreeRefresh);
                 None
@@ -1740,6 +1881,303 @@ fn handle_tree_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Opt
     }
 
     for action in TREE_KEYS {
+        if action.keys.contains(&code) {
+            return (action.handler)(app);
+        }
+    }
+    None
+}
+
+fn handle_memory_store_input_key(app: &mut App, code: KeyCode) -> Option<Action> {
+    match code {
+        KeyCode::Esc => {
+            app.screen = Screen::UniverseChoice;
+            app.status.clear();
+            None
+        }
+        KeyCode::Backspace if app.memory_sorted_map_input.value.is_empty() => {
+            app.screen = Screen::UniverseChoice;
+            app.status.clear();
+            None
+        }
+        KeyCode::Enter => {
+            if app.memory_sorted_map_input.value.is_empty() {
+                return None;
+            }
+            app.memory_sorted_map_id = app.memory_sorted_map_input.value.clone();
+            app.memory_items_next_page_token = None;
+            app.screen = Screen::MemoryStoreEntries;
+            Some(Action::LoadMemoryItems)
+        }
+        _ => {
+            handle_text_field_key(&mut app.memory_sorted_map_input, code, |_| true);
+            None
+        }
+    }
+}
+
+const MEMORY_ENTRIES_KEYS: &[KeyAction] = &[
+    KeyAction {
+        keys: &[KeyCode::Char('n')],
+        hint: |app| app.memory_items_next_page_token.is_some().then_some("n: next page"),
+        handler: |_| Some(Action::LoadNextMemoryItemsPage),
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('p')],
+        hint: |app| (app.memory_items_page_tokens.len() > 1).then_some("p: prev page"),
+        handler: |_| Some(Action::LoadPrevMemoryItemsPage),
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('r')],
+        hint: |_| Some("r: refresh"),
+        handler: |_| Some(Action::RefreshMemoryItems),
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('/')],
+        hint: |_| Some("/: search"),
+        handler: |app| {
+            app.memory_items_search_active = true;
+            app.status = "loading all items for search...".to_string();
+            Some(Action::LoadAllMemoryItemsForSearch)
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('c')],
+        hint: |_| Some("c: create"),
+        handler: |app| {
+            app.memory_create_choosing = true;
+            None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char(' ')],
+        hint: |_| Some("space: select"),
+        handler: |app| {
+            app.toggle_memory_item_mark();
+            None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('a')],
+        hint: |_| Some("a: select all"),
+        handler: |app| {
+            app.toggle_select_all_memory_visible();
+            None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('t')],
+        hint: |app| (!app.visible_memory_item_indices().is_empty()).then_some("t: edit ttl"),
+        handler: |app| {
+            if app.visible_memory_item_indices().is_empty() {
+                return None;
+            }
+            app.memory_ttl_edit.set("3600");
+            app.memory_ttl_editing = true;
+            None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('d')],
+        hint: |app| {
+            if app.visible_memory_item_indices().is_empty() && app.memory_items_marked.is_empty() {
+                None
+            } else if app.memory_items_marked.is_empty() {
+                Some("d: delete")
+            } else {
+                Some("d: delete (selected)")
+            }
+        },
+        handler: |app| {
+            if !app.memory_items_marked.is_empty() {
+                app.arm_confirm(PendingConfirm::BulkDeleteMemoryItems);
+                return None;
+            }
+            if app.visible_memory_item_indices().is_empty() {
+                return None;
+            }
+            app.arm_confirm(PendingConfirm::DeleteMemoryItem);
+            None
+        },
+    },
+    KeyAction {
+        keys: &[KeyCode::Enter, KeyCode::Char('l')],
+        hint: |_| Some("enter/l: view"),
+        handler: |app| {
+            if app.visible_memory_item_indices().is_empty() {
+                return None;
+            }
+            Some(Action::LoadMemoryValue)
+        },
+    },
+];
+
+pub(crate) fn memory_store_input_hints(_app: &App) -> String {
+    "type a sorted map name   enter: confirm   esc: back".to_string()
+}
+
+pub(crate) fn memory_entries_hints(app: &App) -> String {
+    MEMORY_ENTRIES_KEYS
+        .iter()
+        .filter_map(|action| (action.hint)(app))
+        .collect::<Vec<_>>()
+        .join("   ")
+}
+
+const MEMORY_CREATE_KEYS: &[KeyAction] = &[
+    KeyAction {
+        keys: &[KeyCode::Tab, KeyCode::BackTab],
+        hint: |_| Some("tab: switch field"),
+        handler: |_| None,
+    },
+    KeyAction {
+        keys: &[KeyCode::Enter],
+        hint: |_| Some("enter: create"),
+        handler: |_| None,
+    },
+    KeyAction {
+        keys: &[KeyCode::Char('t')],
+        hint: |app| {
+            (app.memory_create_field == MemoryCreateField::Value)
+                .then_some("ctrl+t: tree edit value")
+        },
+        handler: |_| None,
+    },
+    KeyAction {
+        keys: &[KeyCode::Esc],
+        hint: |_| Some("esc: cancel"),
+        handler: |_| None,
+    },
+];
+
+pub(crate) fn memory_create_hints(app: &App) -> String {
+    MEMORY_CREATE_KEYS
+        .iter()
+        .filter_map(|action| (action.hint)(app))
+        .collect::<Vec<_>>()
+        .join("   ")
+}
+
+fn handle_memory_create_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
+    if app.memory_create_field == MemoryCreateField::Value
+        && code == KeyCode::Char('t')
+        && modifiers.contains(KeyModifiers::CONTROL)
+    {
+        app.enter_tree_mode_for(TreeTarget::MemoryCreate);
+        return None;
+    }
+
+    match code {
+        KeyCode::Tab | KeyCode::BackTab => {
+            app.memory_create_field = match app.memory_create_field {
+                MemoryCreateField::Id => MemoryCreateField::Value,
+                MemoryCreateField::Value => MemoryCreateField::Ttl,
+                MemoryCreateField::Ttl => MemoryCreateField::Id,
+            };
+            None
+        }
+        KeyCode::Enter => Some(Action::CreateMemoryItem),
+        KeyCode::Esc => {
+            app.memory_create_active = false;
+            app.status.clear();
+            None
+        }
+        _ => {
+            match app.memory_create_field {
+                MemoryCreateField::Id => handle_text_field_key(&mut app.memory_create_id, code, |_| true),
+                MemoryCreateField::Value => handle_text_field_key(&mut app.memory_create_value, code, |_| true),
+                MemoryCreateField::Ttl => {
+                    handle_text_field_key(&mut app.memory_create_ttl, code, |c| c.is_ascii_digit())
+                }
+            };
+            None
+        }
+    }
+}
+
+fn handle_memory_entries_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
+    if app.tree_mode {
+        return handle_tree_key(app, code, modifiers);
+    }
+
+    if app.memory_create_active {
+        return handle_memory_create_key(app, code, modifiers);
+    }
+
+    if app.memory_create_choosing {
+        app.memory_create_choosing = false;
+        return match code {
+            KeyCode::Char('n') => {
+                app.memory_create_id.clear();
+                app.memory_create_value.clear();
+                app.memory_create_ttl.set("3600");
+                app.memory_create_field = MemoryCreateField::Id;
+                app.memory_create_active = true;
+                None
+            }
+            KeyCode::Char('e') => Some(Action::CreateMemoryItemExternal),
+            _ => None,
+        };
+    }
+
+    if app.memory_ttl_editing {
+        return match code {
+            KeyCode::Enter => Some(Action::SaveMemoryTtl),
+            KeyCode::Esc => {
+                app.memory_ttl_editing = false;
+                app.status.clear();
+                None
+            }
+            _ => {
+                handle_text_field_key(&mut app.memory_ttl_edit, code, |c| c.is_ascii_digit());
+                None
+            }
+        };
+    }
+
+    if app.memory_items_search_active {
+        return match code {
+            KeyCode::Enter | KeyCode::Esc => {
+                app.memory_items_search_active = false;
+                app.memory_items_search.clear();
+                app.status.clear();
+                Some(Action::RefreshMemoryItems)
+            }
+            _ => {
+                if handle_text_field_key(&mut app.memory_items_search, code, |_| true) {
+                    app.memory_items_selected = 0;
+                }
+                None
+            }
+        };
+    }
+
+    if let Some(result) = handle_pending_confirm(app, code) {
+        return result;
+    }
+
+    let visible = app.visible_memory_item_indices().len();
+
+    if let Some(result) = list_nav_key(code, &mut app.memory_items_selected, visible) {
+        return result;
+    }
+    if let Some(result) = quit_key(code, app) {
+        return result;
+    }
+
+    if matches!(code, KeyCode::Esc | KeyCode::Backspace | KeyCode::Char('h')) {
+        if !app.memory_items_search.value.is_empty() {
+            app.memory_items_search.clear();
+            app.memory_items_selected = 0;
+            app.status.clear();
+            return None;
+        }
+        app.screen = Screen::MemoryStoreInput;
+        app.status.clear();
+        return None;
+    }
+
+    for action in MEMORY_ENTRIES_KEYS {
         if action.keys.contains(&code) {
             return (action.handler)(app);
         }

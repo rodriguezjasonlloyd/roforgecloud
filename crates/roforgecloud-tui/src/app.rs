@@ -1,6 +1,7 @@
 use roforgecloud_core::auth;
 use roforgecloud_core::oauth::{self, OAuthClient};
 use roforgecloud_core::opencloud::datastore::{DataStoreEntryInfo, DataStoreInfo};
+use roforgecloud_core::opencloud::memory_store::SortedMapItem;
 use roforgecloud_core::opencloud::ordered_datastore::OrderedDataStoreEntry;
 use roforgecloud_core::opencloud::OpenCloudClient;
 
@@ -81,6 +82,21 @@ pub enum Screen {
     OrderedStoreInput,
     OrderedEntries,
     OrderedValue,
+    MemoryStoreInput,
+    MemoryStoreEntries,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValueSource {
+    DataStore,
+    MemoryStoreSortedMap,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TreeTarget {
+    Value,
+    EntriesCreate,
+    MemoryCreate,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -121,6 +137,17 @@ pub enum Action {
     DeleteOrderedEntry,
     BulkDeleteOrderedEntries,
     IncrementOrderedEntry,
+    LoadMemoryItems,
+    LoadNextMemoryItemsPage,
+    LoadPrevMemoryItemsPage,
+    RefreshMemoryItems,
+    LoadAllMemoryItemsForSearch,
+    CreateMemoryItem,
+    CreateMemoryItemExternal,
+    LoadMemoryValue,
+    SaveMemoryTtl,
+    DeleteMemoryItem,
+    BulkDeleteMemoryItems,
 }
 
 pub const UNIVERSE_CHOICE_LIST_ALL: usize = 0;
@@ -129,8 +156,9 @@ pub const UNIVERSE_CHOICE_ITEMS: &[&str] = &["List my universes (OAuth)", "Enter
 
 pub const SERVICE_DATA_STORES: usize = 0;
 pub const SERVICE_ORDERED_DATA_STORES: usize = 1;
-pub const SERVICE_MESSAGING: usize = 2;
-pub const SERVICE_ACCOUNT: usize = 3;
+pub const SERVICE_MEMORY_STORES: usize = 2;
+pub const SERVICE_MESSAGING: usize = 3;
+pub const SERVICE_ACCOUNT: usize = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MessagingField {
@@ -157,6 +185,13 @@ pub enum OrderedCreateField {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemoryCreateField {
+    Id,
+    Value,
+    Ttl,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PendingConfirm {
     DeleteStore,
     BulkDeleteStores,
@@ -165,6 +200,8 @@ pub enum PendingConfirm {
     BulkDeleteEntries,
     DeleteOrderedEntry,
     BulkDeleteOrderedEntries,
+    DeleteMemoryItem,
+    BulkDeleteMemoryItems,
     Quit,
     TreeQuit,
     TreeRefresh,
@@ -178,7 +215,9 @@ impl PendingConfirm {
             | PendingConfirm::DeleteEntry
             | PendingConfirm::BulkDeleteEntries
             | PendingConfirm::DeleteOrderedEntry
-            | PendingConfirm::BulkDeleteOrderedEntries => "d: confirm delete   any other key: cancel",
+            | PendingConfirm::BulkDeleteOrderedEntries
+            | PendingConfirm::DeleteMemoryItem
+            | PendingConfirm::BulkDeleteMemoryItems => "d: confirm delete   any other key: cancel",
             PendingConfirm::BulkUndeleteStores => "u: confirm undelete   any other key: cancel",
             PendingConfirm::Quit => "q: confirm quit   any other key: cancel",
             PendingConfirm::TreeQuit => {
@@ -260,6 +299,7 @@ pub struct App {
     pub tree_adding: bool,
     pub tree_pending_leader: bool,
     pub tree_dirty: bool,
+    pub tree_target: TreeTarget,
 
     pub messaging_topic: TextField,
     pub messaging_message: TextField,
@@ -289,6 +329,32 @@ pub struct App {
     pub ordered_create_field: OrderedCreateField,
     pub ordered_create_active: bool,
     pub ordered_create_choosing: bool,
+
+    pub value_source: ValueSource,
+
+    pub memory_sorted_map_id: String,
+    pub memory_sorted_map_input: TextField,
+
+    pub memory_items: Vec<SortedMapItem>,
+    pub memory_items_selected: usize,
+    pub memory_items_next_page_token: Option<String>,
+    pub memory_items_page_tokens: Vec<Option<String>>,
+    pub memory_items_marked: std::collections::HashSet<usize>,
+    pub memory_items_search: TextField,
+    pub memory_items_search_active: bool,
+
+    pub memory_create_id: TextField,
+    pub memory_create_value: TextField,
+    pub memory_create_ttl: TextField,
+    pub memory_create_field: MemoryCreateField,
+    pub memory_create_active: bool,
+    pub memory_create_choosing: bool,
+
+    pub memory_ttl_edit: TextField,
+    pub memory_ttl_editing: bool,
+
+    pub memory_item_editing_id: String,
+    pub memory_item_ttl_seconds: u64,
 }
 
 impl App {
@@ -303,6 +369,7 @@ impl App {
         let menu_items = vec![
             ("Data Stores", SERVICE_DATA_STORES),
             ("Ordered Data Stores", SERVICE_ORDERED_DATA_STORES),
+            ("Memory Stores", SERVICE_MEMORY_STORES),
             ("Messaging", SERVICE_MESSAGING),
             ("Account", SERVICE_ACCOUNT),
         ];
@@ -374,6 +441,7 @@ impl App {
             tree_adding: false,
             tree_pending_leader: false,
             tree_dirty: false,
+            tree_target: TreeTarget::Value,
             messaging_topic: TextField::default(),
             messaging_message: TextField::default(),
             messaging_field: MessagingField::Topic,
@@ -401,6 +469,29 @@ impl App {
             ordered_create_field: OrderedCreateField::Id,
             ordered_create_active: false,
             ordered_create_choosing: false,
+            value_source: ValueSource::DataStore,
+            memory_sorted_map_id: String::new(),
+            memory_sorted_map_input: TextField::default(),
+            memory_items: Vec::new(),
+            memory_items_selected: 0,
+            memory_items_next_page_token: None,
+            memory_items_page_tokens: vec![None],
+            memory_items_marked: std::collections::HashSet::new(),
+            memory_items_search: TextField::default(),
+            memory_items_search_active: false,
+            memory_create_id: TextField::default(),
+            memory_create_value: TextField::default(),
+            memory_create_ttl: TextField {
+                value: "3600".to_string(),
+                cursor: "3600".len(),
+            },
+            memory_create_field: MemoryCreateField::Id,
+            memory_create_active: false,
+            memory_create_choosing: false,
+            memory_ttl_edit: TextField::default(),
+            memory_ttl_editing: false,
+            memory_item_editing_id: String::new(),
+            memory_item_ttl_seconds: 3600,
         }
     }
 
@@ -442,6 +533,17 @@ impl App {
             Action::DeleteOrderedEntry => self.delete_ordered_entry().await,
             Action::BulkDeleteOrderedEntries => self.bulk_delete_ordered_entries().await,
             Action::IncrementOrderedEntry => self.increment_ordered_entry().await,
+            Action::LoadMemoryItems => self.load_memory_items().await,
+            Action::LoadNextMemoryItemsPage => self.load_next_memory_items_page().await,
+            Action::LoadPrevMemoryItemsPage => self.load_prev_memory_items_page().await,
+            Action::RefreshMemoryItems => self.load_memory_items_page().await,
+            Action::LoadAllMemoryItemsForSearch => self.load_all_memory_items_for_search().await,
+            Action::CreateMemoryItem => self.create_memory_item().await,
+            Action::CreateMemoryItemExternal => {}
+            Action::LoadMemoryValue => self.load_memory_value().await,
+            Action::SaveMemoryTtl => self.save_memory_ttl().await,
+            Action::DeleteMemoryItem => self.delete_memory_item().await,
+            Action::BulkDeleteMemoryItems => self.bulk_delete_memory_items().await,
         }
     }
 
@@ -817,23 +919,29 @@ impl App {
         !self.stores_marked.is_empty()
             || !self.entries_marked.is_empty()
             || !self.ordered_entries_marked.is_empty()
+            || !self.memory_items_marked.is_empty()
     }
 
     pub fn text_input_active(&self) -> bool {
         match self.screen {
-            Screen::UniverseInput | Screen::Messaging | Screen::OrderedStoreInput => true,
+            Screen::UniverseInput | Screen::Messaging | Screen::OrderedStoreInput | Screen::MemoryStoreInput => true,
             Screen::UniverseSelect => self.universe_search_active,
             Screen::Stores => self.stores_new_active,
             Screen::Entries => {
                 self.entries_search_active || self.entries_create_active || self.entries_create_choosing
             }
-            Screen::Value => self.tree_mode && (self.tree_editing || self.tree_editing_key),
+            Screen::Value => self.tree_mode && (self.tree_editing || self.tree_editing_key) || self.memory_ttl_editing,
             Screen::OrderedEntries => {
                 self.ordered_entries_search_active
                     || self.ordered_create_active
                     || self.ordered_create_choosing
             }
             Screen::OrderedValue => self.ordered_value_editing || self.ordered_increment_editing,
+            Screen::MemoryStoreEntries => {
+                self.memory_items_search_active
+                    || self.memory_create_active
+                    || self.memory_create_choosing
+            }
             _ => false,
         }
     }
@@ -920,6 +1028,10 @@ impl App {
     }
 
     pub async fn load_value(&mut self) {
+        if self.value_source == ValueSource::MemoryStoreSortedMap {
+            return self.load_memory_value().await;
+        }
+
         let Some((scope, key)) = self.current_entry_scope_key() else {
             return;
         };
@@ -937,6 +1049,7 @@ impl App {
                 self.value_scroll = 0;
                 self.tree_mode = false;
                 self.value_tree = None;
+                self.value_source = ValueSource::DataStore;
                 self.status.clear();
             }
             Err(err) => {
@@ -946,12 +1059,25 @@ impl App {
     }
 
     pub fn enter_tree_mode(&mut self) {
-        match serde_json::from_str::<serde_json::Value>(&self.value_text) {
+        self.enter_tree_mode_for(TreeTarget::Value);
+    }
+
+    pub fn enter_tree_mode_for(&mut self, target: TreeTarget) {
+        let source = match target {
+            TreeTarget::Value => self.value_text.clone(),
+            TreeTarget::EntriesCreate => self.entries_create_value.value.clone(),
+            TreeTarget::MemoryCreate => self.memory_create_value.value.clone(),
+        };
+        let source = source.trim();
+        let source = if source.is_empty() { "{}" } else { source };
+
+        match serde_json::from_str::<serde_json::Value>(source) {
             Ok(value) => {
                 let mut tree = JsonNode::from_value(&value);
                 tree.collapse_below_root();
                 self.value_tree = Some(tree);
                 self.tree_mode = true;
+                self.tree_target = target;
                 self.tree_cursor = 0;
                 self.tree_editing = false;
                 self.tree_dirty = false;
@@ -1254,19 +1380,37 @@ impl App {
         let Some(tree) = &self.value_tree else {
             return;
         };
-        self.value_edit_text = serde_json::to_string_pretty(&tree.to_value()).unwrap_or_default();
-        self.save_value().await;
-        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&self.value_text) {
-            let mut tree = JsonNode::from_value(&value);
-            tree.collapse_below_root();
-            self.value_tree = Some(tree);
-            self.tree_mode = true;
-            self.tree_dirty = false;
-            self.pending_confirm = None;
+        let json = serde_json::to_string_pretty(&tree.to_value()).unwrap_or_default();
+
+        match self.tree_target {
+            TreeTarget::Value => {
+                self.value_edit_text = json;
+                self.save_value().await;
+                if let Ok(value) = serde_json::from_str::<serde_json::Value>(&self.value_text) {
+                    let mut tree = JsonNode::from_value(&value);
+                    tree.collapse_below_root();
+                    self.value_tree = Some(tree);
+                    self.tree_mode = true;
+                    self.tree_dirty = false;
+                    self.pending_confirm = None;
+                }
+            }
+            TreeTarget::EntriesCreate => {
+                self.entries_create_value.set(json);
+                self.exit_tree_mode();
+            }
+            TreeTarget::MemoryCreate => {
+                self.memory_create_value.set(json);
+                self.exit_tree_mode();
+            }
         }
     }
 
     pub async fn save_value(&mut self) {
+        if self.value_source == ValueSource::MemoryStoreSortedMap {
+            return self.save_memory_value().await;
+        }
+
         let Some((scope, key)) = self.current_entry_scope_key() else {
             return;
         };
@@ -1303,6 +1447,51 @@ impl App {
             {
                 self.load_value().await;
                 self.status = "conflict: entry changed on server — reloaded latest value, your edit was discarded".to_string();
+            }
+            Err(err) => {
+                self.status = self.datastore_error(err);
+            }
+        }
+    }
+
+    pub async fn save_memory_value(&mut self) {
+        let value: serde_json::Value = match serde_json::from_str(&self.value_edit_text) {
+            Ok(value) => value,
+            Err(err) => {
+                self.status = format!("invalid JSON: {err}");
+                return;
+            }
+        };
+
+        self.status = "saving...".to_string();
+        match self
+            .client
+            .update_sorted_map_item(
+                self.universe_id,
+                &self.memory_sorted_map_id,
+                &self.memory_item_editing_id,
+                &value,
+                self.memory_item_ttl_seconds,
+                self.value_revision.as_deref(),
+            )
+            .await
+        {
+            Ok(item) => {
+                self.value_text = serde_json::to_string_pretty(&item.value).unwrap_or_default();
+                self.value_revision = item.etag.clone();
+                self.value_scroll = 0;
+                if let Some(cached) = self.memory_items.iter_mut().find(|i| i.id == item.id) {
+                    cached.value = item.value;
+                    cached.etag = item.etag;
+                    cached.expire_time = item.expire_time;
+                }
+                self.status = "saved".to_string();
+            }
+            Err(err)
+                if matches!(&err, roforgecloud_core::error::Error::Api { status, .. } if status.as_u16() == 409 || status.as_u16() == 412) =>
+            {
+                self.load_memory_value().await;
+                self.status = "conflict: item changed on server — reloaded latest value, your edit was discarded".to_string();
             }
             Err(err) => {
                 self.status = self.datastore_error(err);
@@ -1815,6 +2004,305 @@ impl App {
             }
             Err(err) => {
                 self.status = format!("error: {err}");
+            }
+        }
+    }
+
+    pub async fn load_memory_items(&mut self) {
+        self.memory_items_page_tokens = vec![None];
+        self.load_memory_items_page().await;
+    }
+
+    pub async fn load_next_memory_items_page(&mut self) {
+        let Some(token) = self.memory_items_next_page_token.clone() else {
+            return;
+        };
+        self.memory_items_page_tokens.push(Some(token));
+        self.load_memory_items_page().await;
+    }
+
+    pub async fn load_prev_memory_items_page(&mut self) {
+        if self.memory_items_page_tokens.len() <= 1 {
+            return;
+        }
+        self.memory_items_page_tokens.pop();
+        self.load_memory_items_page().await;
+    }
+
+    pub async fn load_memory_items_page(&mut self) {
+        let page_token = self.memory_items_page_tokens.last().cloned().flatten();
+
+        self.status = "loading items...".to_string();
+        match self
+            .client
+            .list_sorted_map_items(self.universe_id, &self.memory_sorted_map_id, page_token.as_deref(), Some(256))
+            .await
+        {
+            Ok(result) => {
+                self.memory_items = result.items;
+                self.memory_items_selected = 0;
+                self.memory_items_marked.clear();
+                self.memory_items_next_page_token = result.next_page_token.filter(|t| !t.is_empty());
+                let page = self.memory_items_page_tokens.len();
+                self.status = format!("{} items (page {page})", self.memory_items.len());
+            }
+            Err(err) => {
+                self.status = self.datastore_error(err);
+            }
+        }
+    }
+
+    pub async fn load_all_memory_items_for_search(&mut self) {
+        self.status = "loading all items for search...".to_string();
+        let mut all = Vec::new();
+        let mut page_token: Option<String> = None;
+        loop {
+            match self
+                .client
+                .list_sorted_map_items(self.universe_id, &self.memory_sorted_map_id, page_token.as_deref(), Some(256))
+                .await
+            {
+                Ok(result) => {
+                    all.extend(result.items);
+                    page_token = result.next_page_token.filter(|t| !t.is_empty());
+                    if page_token.is_none() {
+                        break;
+                    }
+                }
+                Err(err) => {
+                    self.status = self.datastore_error(err);
+                    return;
+                }
+            }
+        }
+        self.memory_items = all;
+        self.memory_items_selected = 0;
+        self.memory_items_marked.clear();
+        self.memory_items_next_page_token = None;
+        self.memory_items_page_tokens = vec![None];
+        self.status = format!("{} items (search across whole sorted map)", self.memory_items.len());
+    }
+
+    pub fn visible_memory_item_indices(&self) -> Vec<usize> {
+        if self.memory_items_search.value.is_empty() {
+            return (0..self.memory_items.len()).collect();
+        }
+
+        let needle = self.memory_items_search.value.to_lowercase();
+        self.memory_items
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| item.id.to_lowercase().contains(&needle))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    fn current_memory_item_index(&self) -> Option<usize> {
+        self.visible_memory_item_indices()
+            .get(self.memory_items_selected)
+            .copied()
+    }
+
+    pub fn toggle_memory_item_mark(&mut self) {
+        if let Some(index) = self.current_memory_item_index() {
+            if !self.memory_items_marked.remove(&index) {
+                self.memory_items_marked.insert(index);
+            }
+        }
+    }
+
+    pub fn toggle_select_all_memory_visible(&mut self) {
+        let visible = self.visible_memory_item_indices();
+        if visible.iter().all(|i| self.memory_items_marked.contains(i)) {
+            for i in &visible {
+                self.memory_items_marked.remove(i);
+            }
+        } else {
+            self.memory_items_marked.extend(visible);
+        }
+    }
+
+    pub async fn load_memory_value(&mut self) {
+        let Some(index) = self.current_memory_item_index() else {
+            return;
+        };
+        let id = self.memory_items[index].id.clone();
+
+        self.status = "loading value...".to_string();
+        match self
+            .client
+            .get_sorted_map_item(self.universe_id, &self.memory_sorted_map_id, &id)
+            .await
+        {
+            Ok(item) => {
+                let expire = item.expire_time.clone().unwrap_or_else(|| "—".to_string());
+                self.value_title = format!("{}/{id} (expires: {expire})", self.memory_sorted_map_id);
+                self.value_text = serde_json::to_string_pretty(&item.value).unwrap_or_default();
+                self.value_revision = item.etag;
+                self.value_scroll = 0;
+                self.tree_mode = false;
+                self.value_tree = None;
+                self.value_source = ValueSource::MemoryStoreSortedMap;
+                self.memory_item_editing_id = id;
+                self.memory_item_ttl_seconds = 3600;
+                self.screen = Screen::Value;
+                self.status.clear();
+            }
+            Err(err) => {
+                self.status = self.datastore_error(err);
+            }
+        }
+    }
+
+    pub async fn create_memory_item(&mut self) {
+        let id = self.memory_create_id.value.trim();
+        if id.is_empty() || id.len() > 63 {
+            self.status = "item id must be 1-63 characters".to_string();
+            return;
+        }
+        let value: serde_json::Value = match serde_json::from_str(&self.memory_create_value.value) {
+            Ok(value) => value,
+            Err(err) => {
+                self.status = format!("invalid JSON: {err}");
+                return;
+            }
+        };
+        let ttl: u64 = match self.memory_create_ttl.value.parse() {
+            Ok(ttl) => ttl,
+            Err(_) => {
+                self.status = "invalid ttl".to_string();
+                return;
+            }
+        };
+
+        self.status = "creating...".to_string();
+        match self
+            .client
+            .create_sorted_map_item(self.universe_id, &self.memory_sorted_map_id, id, &value, ttl)
+            .await
+        {
+            Ok(_) => {
+                self.memory_create_id.clear();
+                self.memory_create_value.clear();
+                self.memory_create_ttl.set("3600");
+                self.memory_create_active = false;
+                self.status = "created".to_string();
+                self.load_memory_items_page().await;
+            }
+            Err(err) => {
+                self.status = self.datastore_error(err);
+            }
+        }
+    }
+
+    pub async fn delete_memory_item(&mut self) {
+        let Some(index) = self.current_memory_item_index() else {
+            return;
+        };
+        let id = self.memory_items[index].id.clone();
+
+        self.status = "deleting...".to_string();
+        match self
+            .client
+            .delete_sorted_map_item(self.universe_id, &self.memory_sorted_map_id, &id)
+            .await
+        {
+            Ok(()) => {
+                self.memory_items.remove(index);
+                let visible = self.visible_memory_item_indices().len();
+                if self.memory_items_selected >= visible {
+                    self.memory_items_selected = visible.saturating_sub(1);
+                }
+                if self.screen == Screen::Value {
+                    self.screen = Screen::MemoryStoreEntries;
+                }
+                self.status = "deleted".to_string();
+            }
+            Err(err) => {
+                self.status = self.datastore_error(err);
+            }
+        }
+    }
+
+    pub async fn bulk_delete_memory_items(&mut self) {
+        let mut indices: Vec<usize> = self.memory_items_marked.iter().copied().collect();
+        indices.sort_unstable();
+
+        let total = indices.len();
+        if total == 0 {
+            self.status = "no items to delete".to_string();
+            return;
+        }
+
+        let mut deleted_indices = Vec::new();
+        let mut errors = 0;
+
+        for &i in &indices {
+            let id = self.memory_items[i].id.clone();
+            self.status = format!("deleting {}/{total}...", deleted_indices.len() + errors + 1);
+            match self
+                .client
+                .delete_sorted_map_item(self.universe_id, &self.memory_sorted_map_id, &id)
+                .await
+            {
+                Ok(()) => deleted_indices.push(i),
+                Err(_) => errors += 1,
+            }
+        }
+
+        for &i in deleted_indices.iter().rev() {
+            self.memory_items.remove(i);
+        }
+
+        self.memory_items_marked.clear();
+
+        let visible = self.visible_memory_item_indices().len();
+        if self.memory_items_selected >= visible {
+            self.memory_items_selected = visible.saturating_sub(1);
+        }
+
+        self.status = if errors == 0 {
+            format!("deleted {} items", deleted_indices.len())
+        } else {
+            format!("deleted {} items, {errors} failed", deleted_indices.len())
+        };
+    }
+
+    pub async fn save_memory_ttl(&mut self) {
+        let Some(index) = self.current_memory_item_index() else {
+            return;
+        };
+        let item = self.memory_items[index].clone();
+
+        let ttl: u64 = match self.memory_ttl_edit.value.parse() {
+            Ok(ttl) => ttl,
+            Err(_) => {
+                self.status = "invalid ttl".to_string();
+                return;
+            }
+        };
+
+        self.status = "saving...".to_string();
+        match self
+            .client
+            .update_sorted_map_item(
+                self.universe_id,
+                &self.memory_sorted_map_id,
+                &item.id,
+                &item.value,
+                ttl,
+                item.etag.as_deref(),
+            )
+            .await
+        {
+            Ok(updated) => {
+                self.memory_items[index].etag = updated.etag;
+                self.memory_items[index].expire_time = updated.expire_time;
+                self.memory_ttl_editing = false;
+                self.status = "saved".to_string();
+            }
+            Err(err) => {
+                self.status = self.datastore_error(err);
             }
         }
     }
