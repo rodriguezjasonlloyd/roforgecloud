@@ -6,7 +6,7 @@ use oauth2::{
 use serde::Deserialize;
 use url::Url;
 
-use crate::error::{Error, Result};
+use crate::error::{check_status, Error, Result};
 
 const AUTH_URL: &str = "https://apis.roblox.com/oauth/v1/authorize";
 const TOKEN_URL: &str = "https://apis.roblox.com/oauth/v1/token";
@@ -175,12 +175,7 @@ impl OAuthClient {
             .send()
             .await?;
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(Error::Api { status, body });
-        }
-
+        let response = check_status(response).await?;
         Ok(response.json().await?)
     }
 
@@ -196,12 +191,7 @@ impl OAuthClient {
             .send()
             .await?;
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(Error::Api { status, body });
-        }
-
+        check_status(response).await?;
         Ok(())
     }
 }

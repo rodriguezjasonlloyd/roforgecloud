@@ -1,8 +1,8 @@
 use reqwest::Method;
 use serde::Serialize;
 
-use crate::error::Result;
-use crate::opencloud::client::OpenCloudClient;
+use crate::error::{Error, Result};
+use crate::opencloud::client::{universe_path, Credentials, OpenCloudClient};
 
 #[derive(Debug, Serialize)]
 struct PublishMessageRequest<'a> {
@@ -17,7 +17,13 @@ impl OpenCloudClient {
         topic: &str,
         message: &str,
     ) -> Result<()> {
-        let path = format!("/cloud/v2/universes/{universe_id}:publishMessage");
+        if matches!(self.credentials(), Credentials::OAuthToken(_)) {
+            return Err(Error::OAuth(
+                "publish_message requires an API key, OAuth is not supported".to_string(),
+            ));
+        }
+
+        let path = universe_path(universe_id, ":publishMessage");
         let builder = self
             .request(Method::POST, &path)
             .json(&PublishMessageRequest { topic, message });

@@ -1,8 +1,9 @@
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC};
 use reqwest::{Client, Method, RequestBuilder};
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 
-use crate::error::{Error, Result};
+use crate::error::{check_status, Result};
 
 const DEFAULT_BASE_URL: &str = "https://apis.roblox.com";
 
@@ -14,6 +15,38 @@ const PATH_SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
 
 pub(crate) fn encode_path_segment(value: &str) -> String {
     percent_encoding::utf8_percent_encode(value, PATH_SEGMENT).to_string()
+}
+
+pub(crate) fn item_path(collection_path: &str, item_id: &str) -> String {
+    format!("{collection_path}/{}", encode_path_segment(item_id))
+}
+
+/// Builds a `/cloud/v2/universes/{universe_id}` path, optionally appending
+/// a suffix (e.g. `/data-stores` or `:publishMessage`).
+pub(crate) fn universe_path(universe_id: u64, suffix: &str) -> String {
+    format!("/cloud/v2/universes/{universe_id}{suffix}")
+}
+
+pub(crate) fn extract_revision(obj: &serde_json::Map<String, serde_json::Value>) -> Option<String> {
+    obj.get("revisionId")
+        .or_else(|| obj.get("etag"))
+        .and_then(|v| v.as_str())
+        .map(String::from)
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListQuery<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filter: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_by: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page_token: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_page_size: Option<u32>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub show_deleted: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -50,6 +83,10 @@ impl OpenCloudClient {
         }
     }
 
+    pub(crate) fn credentials(&self) -> &Credentials {
+        &self.credentials
+    }
+
     pub(crate) fn request(&self, method: Method, path: &str) -> RequestBuilder {
         let url = format!("{}{}", self.base_url, path);
         self.authorize(self.http.request(method, url))
@@ -59,22 +96,11 @@ impl OpenCloudClient {
         &self,
         builder: RequestBuilder,
     ) -> Result<T> {
-        let response = builder.send().await?;
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(Error::Api { status, body });
-        }
+        let response = check_status(builder.send().await?).await?;
         Ok(response.json().await?)
     }
 
     pub(crate) async fn send(&self, builder: RequestBuilder) -> Result<reqwest::Response> {
-        let response = builder.send().await?;
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(Error::Api { status, body });
-        }
-        Ok(response)
+        check_status(builder.send().await?).await
     }
 }

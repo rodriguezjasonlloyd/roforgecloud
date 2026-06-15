@@ -2,7 +2,7 @@ use reqwest::Method;
 use serde::Deserialize;
 
 use crate::error::Result;
-use crate::opencloud::client::OpenCloudClient;
+use crate::opencloud::client::{universe_path, OpenCloudClient};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -12,7 +12,7 @@ pub struct UniverseInfo {
 
 impl OpenCloudClient {
     pub async fn get_universe(&self, universe_id: u64) -> Result<UniverseInfo> {
-        let path = format!("/cloud/v2/universes/{universe_id}");
+        let path = universe_path(universe_id, "");
         let builder = self.request(Method::GET, &path);
         self.send_json(builder).await
     }

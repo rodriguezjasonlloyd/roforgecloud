@@ -2,7 +2,9 @@ use reqwest::Method;
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
-use crate::opencloud::client::{encode_path_segment, OpenCloudClient};
+use crate::opencloud::client::{
+    encode_path_segment, item_path, universe_path, ListQuery, OpenCloudClient,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -45,41 +47,25 @@ impl OpenCloudClient {
         ordered_data_store_id: &str,
         scope: &str,
     ) -> String {
-        let ordered_data_store_id = encode_path_segment(ordered_data_store_id);
-        let scope = encode_path_segment(scope);
+        let ordered_data_store_path = item_path(
+            &universe_path(universe_id, "/ordered-data-stores"),
+            ordered_data_store_id,
+        );
         format!(
-            "/cloud/v2/universes/{universe_id}/ordered-data-stores/{ordered_data_store_id}/scopes/{scope}/entries"
+            "{ordered_data_store_path}/scopes/{}/entries",
+            encode_path_segment(scope)
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub async fn list_ordered_entries(
         &self,
         universe_id: u64,
         ordered_data_store_id: &str,
         scope: &str,
-        order_by: Option<&str>,
-        filter: Option<&str>,
-        page_token: Option<&str>,
-        max_page_size: Option<u32>,
+        query: &ListQuery<'_>,
     ) -> Result<ListOrderedEntriesResponse> {
         let path = self.ordered_entries_path(universe_id, ordered_data_store_id, scope);
-
-        let mut query = Vec::new();
-        if let Some(order_by) = order_by {
-            query.push(("orderBy".to_string(), order_by.to_string()));
-        }
-        if let Some(filter) = filter {
-            query.push(("filter".to_string(), filter.to_string()));
-        }
-        if let Some(page_token) = page_token {
-            query.push(("pageToken".to_string(), page_token.to_string()));
-        }
-        if let Some(max_page_size) = max_page_size {
-            query.push(("maxPageSize".to_string(), max_page_size.to_string()));
-        }
-
-        let builder = self.request(Method::GET, &path).query(&query);
+        let builder = self.request(Method::GET, &path).query(query);
         self.send_json(builder).await
     }
 
@@ -106,10 +92,9 @@ impl OpenCloudClient {
         scope: &str,
         entry_id: &str,
     ) -> Result<OrderedDataStoreEntry> {
-        let path = format!(
-            "{}/{}",
-            self.ordered_entries_path(universe_id, ordered_data_store_id, scope),
-            encode_path_segment(entry_id)
+        let path = item_path(
+            &self.ordered_entries_path(universe_id, ordered_data_store_id, scope),
+            entry_id,
         );
         let builder = self.request(Method::GET, &path);
         self.send_json(builder).await
@@ -123,10 +108,9 @@ impl OpenCloudClient {
         entry_id: &str,
         value: f64,
     ) -> Result<OrderedDataStoreEntry> {
-        let path = format!(
-            "{}/{}",
-            self.ordered_entries_path(universe_id, ordered_data_store_id, scope),
-            encode_path_segment(entry_id)
+        let path = item_path(
+            &self.ordered_entries_path(universe_id, ordered_data_store_id, scope),
+            entry_id,
         );
         let builder = self
             .request(Method::PATCH, &path)
@@ -141,10 +125,9 @@ impl OpenCloudClient {
         scope: &str,
         entry_id: &str,
     ) -> Result<()> {
-        let path = format!(
-            "{}/{}",
-            self.ordered_entries_path(universe_id, ordered_data_store_id, scope),
-            encode_path_segment(entry_id)
+        let path = item_path(
+            &self.ordered_entries_path(universe_id, ordered_data_store_id, scope),
+            entry_id,
         );
         let builder = self.request(Method::DELETE, &path);
         self.send(builder).await?;
@@ -160,9 +143,11 @@ impl OpenCloudClient {
         amount: f64,
     ) -> Result<OrderedDataStoreEntry> {
         let path = format!(
-            "{}/{}:increment",
-            self.ordered_entries_path(universe_id, ordered_data_store_id, scope),
-            encode_path_segment(entry_id)
+            "{}:increment",
+            item_path(
+                &self.ordered_entries_path(universe_id, ordered_data_store_id, scope),
+                entry_id,
+            )
         );
         let builder = self
             .request(Method::POST, &path)

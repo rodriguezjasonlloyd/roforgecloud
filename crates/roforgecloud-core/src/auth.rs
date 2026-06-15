@@ -7,7 +7,7 @@ use tokio::net::TcpListener;
 
 use crate::oauth::{OAuthClient, TokenResponseExt, TokenResponseType};
 
-const SCOPES: &[&str] = &["universe:read", "universe-messaging-service:publish"];
+const SCOPES: &[&str] = &["universe:read"];
 
 #[derive(Debug, Serialize, Deserialize)]
 struct StoredToken {
@@ -21,7 +21,7 @@ pub fn build_oauth_client(
     client_secret: Option<String>,
     relay_url: &str,
     redirect_uri: &str,
-) -> anyhow::Result<OAuthClient> {
+) -> crate::error::Result<OAuthClient> {
     let has_secret = client_secret.is_some();
     let oauth = OAuthClient::new(client_id, client_secret.unwrap_or_default(), redirect_uri)?;
     let oauth = if !has_secret && !relay_url.is_empty() {
@@ -32,7 +32,7 @@ pub fn build_oauth_client(
     Ok(oauth)
 }
 
-pub async fn access_token(oauth: &OAuthClient, redirect_uri: &str) -> anyhow::Result<String> {
+pub async fn access_token(oauth: &OAuthClient, redirect_uri: &str) -> crate::error::Result<String> {
     if let Some(token) = cached_access_token(oauth).await {
         return Ok(token);
     }
@@ -60,14 +60,14 @@ pub fn is_logged_in() -> bool {
     load_cached_token().is_some()
 }
 
-pub async fn force_login(oauth: &OAuthClient, redirect_uri: &str) -> anyhow::Result<String> {
+pub async fn force_login(oauth: &OAuthClient, redirect_uri: &str) -> crate::error::Result<String> {
     let response = login(oauth, redirect_uri).await?;
     let stored = stored_token_from_response(&response);
     save_token(&stored)?;
     Ok(stored.access_token)
 }
 
-async fn login(oauth: &OAuthClient, redirect_uri: &str) -> anyhow::Result<TokenResponseType> {
+async fn login(oauth: &OAuthClient, redirect_uri: &str) -> crate::error::Result<TokenResponseType> {
     let (auth_url, state) = oauth.authorize_url(SCOPES.iter().map(|s| s.to_string()));
 
     println!("Open this URL in your browser to authorize roforgecloud:\n");
@@ -92,7 +92,9 @@ async fn login(oauth: &OAuthClient, redirect_uri: &str) -> anyhow::Result<TokenR
     };
 
     if returned_state != *state.csrf_token.secret() {
-        anyhow::bail!("OAuth state mismatch");
+        return Err(crate::error::Error::OAuth(
+            "OAuth state mismatch".to_string(),
+        ));
     }
 
     let token = oauth.exchange_code(code, state.pkce_verifier).await?;
@@ -102,7 +104,7 @@ async fn login(oauth: &OAuthClient, redirect_uri: &str) -> anyhow::Result<TokenR
 
 async fn handle_callback(
     stream: &mut tokio::net::TcpStream,
-) -> anyhow::Result<Option<(String, String)>> {
+) -> crate::error::Result<Option<(String, String)>> {
     let mut reader = BufReader::new(&mut *stream);
     let mut request_line = String::new();
     reader.read_line(&mut request_line).await?;
@@ -169,7 +171,7 @@ fn is_expired(token: &StoredToken) -> bool {
     }
 }
 
-pub async fn logout(oauth: &OAuthClient) -> anyhow::Result<()> {
+pub async fn logout(oauth: &OAuthClient) -> crate::error::Result<()> {
     if let Some(cached) = load_cached_token() {
         if let Some(refresh_token) = &cached.refresh_token {
             let _ = oauth.revoke(refresh_token).await;
@@ -194,7 +196,7 @@ fn load_cached_token() -> Option<StoredToken> {
     serde_json::from_slice(&bytes).ok()
 }
 
-fn save_token(token: &StoredToken) -> anyhow::Result<()> {
+fn save_token(token: &StoredToken) -> crate::error::Result<()> {
     let path = token_cache_path();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;

@@ -2,7 +2,7 @@ use reqwest::Method;
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
-use crate::opencloud::client::{encode_path_segment, OpenCloudClient};
+use crate::opencloud::client::{item_path, universe_path, ListQuery, OpenCloudClient};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -61,15 +61,18 @@ struct AddQueueItemRequest<'a> {
 impl OpenCloudClient {
     fn sorted_map_items_path(&self, universe_id: u64, sorted_map: &str) -> String {
         format!(
-            "/cloud/v2/universes/{universe_id}/memory-store/sorted-maps/{}/items",
-            encode_path_segment(sorted_map)
+            "{}/items",
+            item_path(
+                &universe_path(universe_id, "/memory-store/sorted-maps"),
+                sorted_map
+            )
         )
     }
 
     fn queue_items_path(&self, universe_id: u64, queue: &str) -> String {
         format!(
-            "/cloud/v2/universes/{universe_id}/memory-store/queues/{}/items",
-            encode_path_segment(queue)
+            "{}/items",
+            item_path(&universe_path(universe_id, "/memory-store/queues"), queue)
         )
     }
 
@@ -77,20 +80,10 @@ impl OpenCloudClient {
         &self,
         universe_id: u64,
         sorted_map: &str,
-        page_token: Option<&str>,
-        max_page_size: Option<u32>,
+        query: &ListQuery<'_>,
     ) -> Result<ListSortedMapItemsResponse> {
         let path = self.sorted_map_items_path(universe_id, sorted_map);
-
-        let mut query = Vec::new();
-        if let Some(page_token) = page_token {
-            query.push(("pageToken".to_string(), page_token.to_string()));
-        }
-        if let Some(max_page_size) = max_page_size {
-            query.push(("maxPageSize".to_string(), max_page_size.to_string()));
-        }
-
-        let builder = self.request(Method::GET, &path).query(&query);
+        let builder = self.request(Method::GET, &path).query(query);
         self.send_json(builder).await
     }
 
@@ -100,10 +93,9 @@ impl OpenCloudClient {
         sorted_map: &str,
         item_id: &str,
     ) -> Result<SortedMapItem> {
-        let path = format!(
-            "{}/{}",
-            self.sorted_map_items_path(universe_id, sorted_map),
-            encode_path_segment(item_id)
+        let path = item_path(
+            &self.sorted_map_items_path(universe_id, sorted_map),
+            item_id,
         );
         let builder = self.request(Method::GET, &path);
         self.send_json(builder).await
@@ -137,22 +129,21 @@ impl OpenCloudClient {
         ttl_seconds: u64,
         etag: Option<&str>,
     ) -> Result<SortedMapItem> {
-        let path = format!(
-            "{}/{}",
-            self.sorted_map_items_path(universe_id, sorted_map),
-            encode_path_segment(item_id)
+        let path = item_path(
+            &self.sorted_map_items_path(universe_id, sorted_map),
+            item_id,
         );
         let mut query = Vec::new();
         if let Some(etag) = etag {
             query.push(("etag".to_string(), etag.to_string()));
         }
-        let builder = self
-            .request(Method::PATCH, &path)
-            .query(&query)
-            .json(&SortedMapItemRequest {
-                value,
-                ttl: format!("{ttl_seconds}s"),
-            });
+        let builder =
+            self.request(Method::PATCH, &path)
+                .query(&query)
+                .json(&SortedMapItemRequest {
+                    value,
+                    ttl: format!("{ttl_seconds}s"),
+                });
         self.send_json(builder).await
     }
 
@@ -162,10 +153,9 @@ impl OpenCloudClient {
         sorted_map: &str,
         item_id: &str,
     ) -> Result<()> {
-        let path = format!(
-            "{}/{}",
-            self.sorted_map_items_path(universe_id, sorted_map),
-            encode_path_segment(item_id)
+        let path = item_path(
+            &self.sorted_map_items_path(universe_id, sorted_map),
+            item_id,
         );
         let builder = self.request(Method::DELETE, &path);
         self.send(builder).await?;
@@ -221,11 +211,7 @@ impl OpenCloudClient {
         queue: &str,
         item_id: &str,
     ) -> Result<()> {
-        let path = format!(
-            "{}/{}",
-            self.queue_items_path(universe_id, queue),
-            encode_path_segment(item_id)
-        );
+        let path = item_path(&self.queue_items_path(universe_id, queue), item_id);
         let builder = self.request(Method::DELETE, &path);
         self.send(builder).await?;
         Ok(())

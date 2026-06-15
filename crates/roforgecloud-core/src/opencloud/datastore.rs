@@ -2,7 +2,9 @@ use reqwest::Method;
 use serde::Deserialize;
 
 use crate::error::Result;
-use crate::opencloud::client::{encode_path_segment, OpenCloudClient};
+use crate::opencloud::client::{
+    encode_path_segment, extract_revision, item_path, universe_path, ListQuery, OpenCloudClient,
+};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -52,42 +54,28 @@ pub struct ListEntriesResponse {
 }
 
 impl OpenCloudClient {
+    fn data_stores_path(&self, universe_id: u64) -> String {
+        universe_path(universe_id, "/data-stores")
+    }
+
     fn entries_path(&self, universe_id: u64, data_store_id: &str, scope: Option<&str>) -> String {
-        let data_store_id = encode_path_segment(data_store_id);
+        let data_store_path = item_path(&self.data_stores_path(universe_id), data_store_id);
         match scope {
-            Some(scope) => {
-                let scope = encode_path_segment(scope);
-                format!(
-                    "/cloud/v2/universes/{universe_id}/data-stores/{data_store_id}/scopes/{scope}/entries"
-                )
-            }
-            None => {
-                format!("/cloud/v2/universes/{universe_id}/data-stores/{data_store_id}/entries")
-            }
+            Some(scope) => format!(
+                "{data_store_path}/scopes/{}/entries",
+                encode_path_segment(scope)
+            ),
+            None => format!("{data_store_path}/entries"),
         }
     }
 
     pub async fn list_data_stores(
         &self,
         universe_id: u64,
-        page_token: Option<&str>,
-        max_page_size: Option<u32>,
-        show_deleted: bool,
+        query: &ListQuery<'_>,
     ) -> Result<ListDataStoresResponse> {
-        let path = format!("/cloud/v2/universes/{universe_id}/data-stores");
-
-        let mut query = Vec::new();
-        if let Some(page_token) = page_token {
-            query.push(("pageToken".to_string(), page_token.to_string()));
-        }
-        if let Some(max_page_size) = max_page_size {
-            query.push(("maxPageSize".to_string(), max_page_size.to_string()));
-        }
-        if show_deleted {
-            query.push(("showDeleted".to_string(), "true".to_string()));
-        }
-
-        let builder = self.request(Method::GET, &path).query(&query);
+        let path = self.data_stores_path(universe_id);
+        let builder = self.request(Method::GET, &path).query(query);
         self.send_json(builder).await
     }
 
@@ -96,8 +84,7 @@ impl OpenCloudClient {
         universe_id: u64,
         data_store_id: &str,
     ) -> Result<DataStoreInfo> {
-        let data_store_id = encode_path_segment(data_store_id);
-        let path = format!("/cloud/v2/universes/{universe_id}/data-stores/{data_store_id}");
+        let path = item_path(&self.data_stores_path(universe_id), data_store_id);
 
         let builder = self.request(Method::DELETE, &path);
         self.send_json(builder).await
@@ -108,9 +95,10 @@ impl OpenCloudClient {
         universe_id: u64,
         data_store_id: &str,
     ) -> Result<DataStoreInfo> {
-        let data_store_id = encode_path_segment(data_store_id);
-        let path =
-            format!("/cloud/v2/universes/{universe_id}/data-stores/{data_store_id}:undelete");
+        let path = format!(
+            "{}:undelete",
+            item_path(&self.data_stores_path(universe_id), data_store_id)
+        );
 
         let builder = self
             .request(Method::POST, &path)
@@ -123,24 +111,10 @@ impl OpenCloudClient {
         universe_id: u64,
         data_store_id: &str,
         scope: Option<&str>,
-        filter: Option<&str>,
-        page_token: Option<&str>,
-        max_page_size: Option<u32>,
+        query: &ListQuery<'_>,
     ) -> Result<ListEntriesResponse> {
         let path = self.entries_path(universe_id, data_store_id, scope);
-
-        let mut query = Vec::new();
-        if let Some(filter) = filter {
-            query.push(("filter".to_string(), filter.to_string()));
-        }
-        if let Some(page_token) = page_token {
-            query.push(("pageToken".to_string(), page_token.to_string()));
-        }
-        if let Some(max_page_size) = max_page_size {
-            query.push(("maxPageSize".to_string(), max_page_size.to_string()));
-        }
-
-        let builder = self.request(Method::GET, &path).query(&query);
+        let builder = self.request(Method::GET, &path).query(query);
         self.send_json(builder).await
     }
 
@@ -164,20 +138,15 @@ impl OpenCloudClient {
         entry_id: &str,
         scope: Option<&str>,
     ) -> Result<(serde_json::Value, Option<String>)> {
-        let path = format!(
-            "{}/{}",
-            self.entries_path(universe_id, data_store_id, scope),
-            encode_path_segment(entry_id)
+        let path = item_path(
+            &self.entries_path(universe_id, data_store_id, scope),
+            entry_id,
         );
         let builder = self.request(Method::GET, &path);
         let entry: serde_json::Value = self.send_json(builder).await?;
         Ok(match entry {
             serde_json::Value::Object(mut obj) => {
-                let revision = obj
-                    .get("revisionId")
-                    .or_else(|| obj.get("etag"))
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
+                let revision = extract_revision(&obj);
                 let value = obj
                     .remove("value")
                     .unwrap_or(serde_json::Value::Object(obj));
@@ -213,10 +182,9 @@ impl OpenCloudClient {
         value: &serde_json::Value,
         match_version: Option<&str>,
     ) -> Result<Option<String>> {
-        let path = format!(
-            "{}/{}",
-            self.entries_path(universe_id, data_store_id, scope),
-            encode_path_segment(entry_id)
+        let path = item_path(
+            &self.entries_path(universe_id, data_store_id, scope),
+            entry_id,
         );
         let mut query = vec![("allowMissing".to_string(), "true".to_string())];
         if let Some(match_version) = match_version {
@@ -227,11 +195,7 @@ impl OpenCloudClient {
             .query(&query)
             .json(&serde_json::json!({ "value": value }));
         let response: serde_json::Value = self.send_json(builder).await?;
-        Ok(response
-            .get("revisionId")
-            .or_else(|| response.get("etag"))
-            .and_then(|v| v.as_str())
-            .map(String::from))
+        Ok(response.as_object().and_then(extract_revision))
     }
 
     pub async fn delete_entry(
@@ -241,10 +205,9 @@ impl OpenCloudClient {
         entry_id: &str,
         scope: Option<&str>,
     ) -> Result<()> {
-        let path = format!(
-            "{}/{}",
-            self.entries_path(universe_id, data_store_id, scope),
-            encode_path_segment(entry_id)
+        let path = item_path(
+            &self.entries_path(universe_id, data_store_id, scope),
+            entry_id,
         );
         let builder = self.request(Method::DELETE, &path);
         self.send(builder).await?;

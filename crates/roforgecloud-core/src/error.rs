@@ -19,6 +19,18 @@ pub enum Error {
 
     #[error("oauth error: {0}")]
     OAuth(String),
+
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+pub(crate) async fn check_status(response: reqwest::Response) -> Result<reqwest::Response> {
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(Error::Api { status, body });
+    }
+    Ok(response)
+}
