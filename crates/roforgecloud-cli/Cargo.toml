@@ -10,11 +10,11 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1"
-arboard = { version = "3.6.1", default-features = false }
+arboard = { version = "3", default-features = false }
 clap = { version = "4", features = ["derive", "env"] }
-colored = "3.1.1"
-colored_json = "5.0.0"
-comfy-table = "7.2.2"
+colored = "3"
+colored_json = "5"
+comfy-table = "7"
 dotenvy = "0.15"
 roforgecloud-core = { path = "../roforgecloud-core" }
 serde.workspace = true
