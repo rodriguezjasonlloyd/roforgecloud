@@ -16,6 +16,7 @@ crossterm.workspace = true
 dotenvy = "0.15"
 open = "5"
 ratatui.workspace = true
+ratatui-which-key = { version = "0.12", default-features = false }
 reqwest.workspace = true
 roforgecloud-core = { path = "../roforgecloud-core" }
 serde.workspace = true

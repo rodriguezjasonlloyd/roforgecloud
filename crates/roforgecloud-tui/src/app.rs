@@ -300,6 +300,8 @@ pub struct App {
     pub tree_target: TreeTarget,
     pub clipboard: Option<arboard::Clipboard>,
 
+    pub which_key: crate::update::Keys,
+
     pub messaging_topic: TextField,
     pub messaging_message: TextField,
     pub messaging_field: MessagingField,
@@ -483,6 +485,10 @@ impl App {
             memory_ttl_editing: false,
             memory_item_editing_id: String::new(),
             memory_item_ttl_seconds: 3600,
+            which_key: crate::update::Keys::new(
+                crate::update::build_keymap(),
+                crate::update::Scope::Menu,
+            ),
         }
     }
 

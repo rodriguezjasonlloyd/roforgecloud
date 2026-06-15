@@ -1,4 +1,6 @@
-use crossterm::event::{KeyCode, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui_which_key::{Key, Keymap};
+pub(crate) use ratatui_which_key::WhichKeyState;
 
 use crate::app::{
     Action, App, EntriesCreateField, MemoryCreateField, MessagingField, OrderedCreateField,
@@ -6,6 +8,1092 @@ use crate::app::{
     SERVICE_DATA_STORES, SERVICE_MEMORY_STORES, SERVICE_MESSAGING, SERVICE_ORDERED_DATA_STORES,
     UNIVERSE_CHOICE_ENTER_ID, UNIVERSE_CHOICE_ITEMS, UNIVERSE_CHOICE_LIST_ALL,
 };
+
+/// Which-key scope: one variant per screen that has a key dispatch table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum Scope {
+    Menu,
+    UniverseChoice,
+    UniverseSelect,
+    Stores,
+    Entries,
+    Value,
+    Tree,
+    OrderedEntries,
+    OrderedValue,
+    MemoryEntries,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Category {
+    General,
+}
+
+impl std::fmt::Display for Category {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "general")
+    }
+}
+
+/// A key-bound action: a short description (shown in the hint bar and
+/// which-key popup) plus the handler that runs when the key is pressed.
+#[derive(Clone, Copy)]
+pub(crate) struct Act {
+    pub desc: &'static str,
+    pub handler: fn(&mut App) -> Option<Action>,
+}
+
+impl std::fmt::Display for Act {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.desc)
+    }
+}
+
+/// Newtype around our crossterm version's `KeyEvent`, needed because
+/// `ratatui-which-key`'s built-in `Key` impl targets its own crossterm
+/// version (which may differ from the workspace's).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AppKey(pub KeyEvent);
+
+impl Key for AppKey {
+    fn display(&self) -> String {
+        if self.0.modifiers.contains(KeyModifiers::CONTROL) {
+            if let KeyCode::Char(c) = self.0.code {
+                return format!("<C-{}>", c.to_ascii_lowercase());
+            }
+        }
+        if self.0.modifiers.contains(KeyModifiers::ALT) {
+            if let KeyCode::Char(c) = self.0.code {
+                return format!("<M-{}>", c.to_ascii_lowercase());
+            }
+        }
+        match self.0.code {
+            KeyCode::Char(' ') => "Space".to_string(),
+            KeyCode::Char(c) => c.to_string(),
+            KeyCode::Tab => "Tab".to_string(),
+            KeyCode::Enter => "Enter".to_string(),
+            KeyCode::Backspace => "Backspace".to_string(),
+            KeyCode::Esc => "Esc".to_string(),
+            KeyCode::Up => "Up".to_string(),
+            KeyCode::Down => "Down".to_string(),
+            KeyCode::Left => "Left".to_string(),
+            KeyCode::Right => "Right".to_string(),
+            KeyCode::Home => "Home".to_string(),
+            KeyCode::End => "End".to_string(),
+            KeyCode::PageUp => "PageUp".to_string(),
+            KeyCode::PageDown => "PageDown".to_string(),
+            KeyCode::F(n) => format!("F{n}"),
+            _ => "?".to_string(),
+        }
+    }
+
+    fn is_backspace(&self) -> bool {
+        matches!(self.0.code, KeyCode::Backspace)
+    }
+
+    fn space() -> Self {
+        AppKey(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::empty()))
+    }
+
+    fn from_char(c: char) -> Option<Self> {
+        Some(AppKey(KeyEvent::new(KeyCode::Char(c), KeyModifiers::empty())))
+    }
+
+    fn from_special_name(name: &str) -> Option<Self> {
+        let lower = name.to_ascii_lowercase();
+
+        if lower.starts_with("c-") && lower.len() == 3 {
+            let c = lower.chars().nth(2)?;
+            return Some(AppKey(KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)));
+        }
+        if lower.starts_with("m-") && lower.len() == 3 {
+            let c = lower.chars().nth(2)?;
+            return Some(AppKey(KeyEvent::new(KeyCode::Char(c), KeyModifiers::ALT)));
+        }
+
+        let code = match lower.as_str() {
+            "tab" => KeyCode::Tab,
+            "enter" => KeyCode::Enter,
+            "bs" | "backspace" => KeyCode::Backspace,
+            "esc" | "escape" => KeyCode::Esc,
+            "up" => KeyCode::Up,
+            "down" => KeyCode::Down,
+            "left" => KeyCode::Left,
+            "right" => KeyCode::Right,
+            "home" => KeyCode::Home,
+            "end" => KeyCode::End,
+            "pgup" | "pageup" => KeyCode::PageUp,
+            "pgdn" | "pagedown" => KeyCode::PageDown,
+            "space" => KeyCode::Char(' '),
+            "lt" => KeyCode::Char('<'),
+            "gt" => KeyCode::Char('>'),
+            s if s.starts_with('f') && s.len() > 1 => {
+                let num: u8 = s[1..].parse().ok()?;
+                if !(1..=12).contains(&num) {
+                    return None;
+                }
+                KeyCode::F(num)
+            }
+            _ => return None,
+        };
+
+        Some(AppKey(KeyEvent::new(code, KeyModifiers::empty())))
+    }
+}
+
+pub(crate) type Keys = WhichKeyState<AppKey, Scope, Act, Category>;
+
+fn bind(keymap: &mut Keymap<AppKey, Scope, Act, Category>, code: KeyCode, act: Act, scope: Scope) {
+    let seq = match code {
+        KeyCode::Char(c) => c.to_string(),
+        KeyCode::Enter => "<enter>".to_string(),
+        KeyCode::Esc => "<esc>".to_string(),
+        KeyCode::Up => "<up>".to_string(),
+        KeyCode::Down => "<down>".to_string(),
+        KeyCode::PageUp => "<pgup>".to_string(),
+        KeyCode::PageDown => "<pgdn>".to_string(),
+        KeyCode::Tab => "<tab>".to_string(),
+        KeyCode::Backspace => "<bs>".to_string(),
+        _ => return,
+    };
+    keymap.bind(&seq, act, Category::General, scope);
+}
+
+/// Dispatch the next key through the which-key keymap for `scope`, falling
+/// back to `None` (no action) if the key has no binding in that scope.
+fn dispatch(app: &mut App, scope: Scope, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
+    app.which_key.set_scope(scope);
+    let act = app
+        .which_key
+        .handle_key(AppKey(KeyEvent::new(code, modifiers)))?;
+    (act.handler)(app)
+}
+
+/// Render the bottom hint bar for `scope` from the which-key keymap.
+pub(crate) fn hint_bar(app: &App, scope: Scope) -> String {
+    let mut keys = app.which_key.clone();
+    keys.set_scope(scope);
+    keys.current_bindings()
+        .iter()
+        .flat_map(|group| group.bindings.iter())
+        .map(|binding| format!("{}: {}", binding.key.display(), binding.description))
+        .collect::<Vec<_>>()
+        .join("   ")
+}
+
+pub(crate) fn build_keymap() -> Keymap<AppKey, Scope, Act, Category> {
+    let mut keymap = Keymap::new();
+
+    // Menu
+    bind(
+        &mut keymap,
+        KeyCode::Enter,
+        Act { desc: "open", handler: menu_open },
+        Scope::Menu,
+    );
+    bind(&mut keymap, KeyCode::Char('l'), Act { desc: "open", handler: menu_open }, Scope::Menu);
+
+    // UniverseChoice
+    bind(
+        &mut keymap,
+        KeyCode::Enter,
+        Act { desc: "select", handler: universe_choice_select },
+        Scope::UniverseChoice,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('l'),
+        Act { desc: "select", handler: universe_choice_select },
+        Scope::UniverseChoice,
+    );
+
+    // UniverseSelect
+    bind(
+        &mut keymap,
+        KeyCode::Char('/'),
+        Act {
+            desc: "search",
+            handler: |app| {
+                app.universe_search_active = true;
+                None
+            },
+        },
+        Scope::UniverseSelect,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Enter,
+        Act { desc: "select", handler: universe_select_choose },
+        Scope::UniverseSelect,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('l'),
+        Act { desc: "select", handler: universe_select_choose },
+        Scope::UniverseSelect,
+    );
+
+    // Stores
+    bind(&mut keymap, KeyCode::Enter, Act { desc: "open", handler: stores_open }, Scope::Stores);
+    bind(&mut keymap, KeyCode::Char('l'), Act { desc: "open", handler: stores_open }, Scope::Stores);
+    bind(
+        &mut keymap,
+        KeyCode::Char(' '),
+        Act {
+            desc: "select",
+            handler: |app| {
+                app.toggle_store_mark();
+                None
+            },
+        },
+        Scope::Stores,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('a'),
+        Act {
+            desc: "select all",
+            handler: |app| {
+                app.toggle_select_all_stores();
+                None
+            },
+        },
+        Scope::Stores,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('r'),
+        Act { desc: "refresh", handler: |_| Some(Action::LoadStores) },
+        Scope::Stores,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('c'),
+        Act {
+            desc: "create entry in new store",
+            handler: |app| {
+                app.stores_new_id.clear();
+                app.stores_new_active = true;
+                None
+            },
+        },
+        Scope::Stores,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('d'),
+        Act { desc: "delete", handler: stores_delete },
+        Scope::Stores,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('u'),
+        Act { desc: "undelete", handler: stores_undelete },
+        Scope::Stores,
+    );
+
+    // Entries
+    bind(
+        &mut keymap,
+        KeyCode::Char('n'),
+        Act { desc: "next page", handler: |_| Some(Action::LoadNextEntriesPage) },
+        Scope::Entries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('p'),
+        Act { desc: "prev page", handler: |_| Some(Action::LoadPrevEntriesPage) },
+        Scope::Entries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('r'),
+        Act { desc: "refresh", handler: |_| Some(Action::RefreshEntries) },
+        Scope::Entries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('/'),
+        Act {
+            desc: "search",
+            handler: |app| {
+                app.entries_search_active = true;
+                app.status = "loading all entries for search...".to_string();
+                Some(Action::LoadAllEntriesForSearch)
+            },
+        },
+        Scope::Entries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('c'),
+        Act {
+            desc: "create",
+            handler: |app| {
+                app.entries_create_choosing = true;
+                None
+            },
+        },
+        Scope::Entries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char(' '),
+        Act {
+            desc: "select",
+            handler: |app| {
+                app.toggle_entry_mark();
+                None
+            },
+        },
+        Scope::Entries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('a'),
+        Act {
+            desc: "select all",
+            handler: |app| {
+                app.toggle_select_all_visible();
+                None
+            },
+        },
+        Scope::Entries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('d'),
+        Act { desc: "delete", handler: entries_delete },
+        Scope::Entries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Enter,
+        Act { desc: "view", handler: entries_view },
+        Scope::Entries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('l'),
+        Act { desc: "view", handler: entries_view },
+        Scope::Entries,
+    );
+
+    // Value
+    bind(
+        &mut keymap,
+        KeyCode::Char('r'),
+        Act { desc: "refresh", handler: |_| Some(Action::LoadValue) },
+        Scope::Value,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Enter,
+        Act {
+            desc: "tree edit",
+            handler: |app| {
+                app.enter_tree_mode();
+                None
+            },
+        },
+        Scope::Value,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('l'),
+        Act {
+            desc: "tree edit",
+            handler: |app| {
+                app.enter_tree_mode();
+                None
+            },
+        },
+        Scope::Value,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('e'),
+        Act { desc: "edit in $EDITOR", handler: |_| Some(Action::EditValueExternal) },
+        Scope::Value,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('d'),
+        Act {
+            desc: "delete",
+            handler: |app| {
+                let pending = match app.value_source {
+                    ValueSource::DataStore => PendingConfirm::DeleteEntry,
+                    ValueSource::MemoryStoreSortedMap => PendingConfirm::DeleteMemoryItem,
+                };
+                app.arm_confirm(pending);
+                None
+            },
+        },
+        Scope::Value,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('t'),
+        Act {
+            desc: "edit ttl",
+            handler: |app| {
+                if app.value_source != ValueSource::MemoryStoreSortedMap {
+                    return None;
+                }
+                app.memory_ttl_edit
+                    .set(app.memory_item_ttl_seconds.to_string());
+                app.memory_ttl_editing = true;
+                None
+            },
+        },
+        Scope::Value,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Up,
+        Act { desc: "scroll up", handler: value_scroll_up },
+        Scope::Value,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('k'),
+        Act { desc: "scroll up", handler: value_scroll_up },
+        Scope::Value,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Down,
+        Act { desc: "scroll down", handler: value_scroll_down },
+        Scope::Value,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('j'),
+        Act { desc: "scroll down", handler: value_scroll_down },
+        Scope::Value,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::PageUp,
+        Act {
+            desc: "scroll up x10",
+            handler: |app| {
+                app.value_scroll = app.value_scroll.saturating_sub(10);
+                None
+            },
+        },
+        Scope::Value,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::PageDown,
+        Act {
+            desc: "scroll down x10",
+            handler: |app| {
+                let max_scroll = app.max_value_scroll();
+                app.value_scroll = (app.value_scroll + 10).min(max_scroll);
+                None
+            },
+        },
+        Scope::Value,
+    );
+
+    // Tree
+    keymap.bind(
+        "<C-s>",
+        Act { desc: "save", handler: |_| Some(Action::SaveTree) },
+        Category::General,
+        Scope::Tree,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Up,
+        Act {
+            desc: "move up",
+            handler: |app| {
+                app.tree_editor.as_mut().unwrap().move_cursor(-1);
+                None
+            },
+        },
+        Scope::Tree,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('k'),
+        Act {
+            desc: "move up",
+            handler: |app| {
+                app.tree_editor.as_mut().unwrap().move_cursor(-1);
+                None
+            },
+        },
+        Scope::Tree,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Down,
+        Act {
+            desc: "move down",
+            handler: |app| {
+                app.tree_editor.as_mut().unwrap().move_cursor(1);
+                None
+            },
+        },
+        Scope::Tree,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('j'),
+        Act {
+            desc: "move down",
+            handler: |app| {
+                app.tree_editor.as_mut().unwrap().move_cursor(1);
+                None
+            },
+        },
+        Scope::Tree,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char(' '),
+        Act {
+            desc: "fold/unfold",
+            handler: |app| {
+                app.tree_editor.as_mut().unwrap().toggle();
+                None
+            },
+        },
+        Scope::Tree,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Enter,
+        Act {
+            desc: "edit value",
+            handler: |app| {
+                app.tree_editor.as_mut().unwrap().edit_leaf();
+                None
+            },
+        },
+        Scope::Tree,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('y'),
+        Act { desc: "yank", handler: tree_yank },
+        Scope::Tree,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('p'),
+        Act { desc: "paste", handler: tree_paste },
+        Scope::Tree,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('d'),
+        Act { desc: "delete entry", handler: tree_delete_entry },
+        Scope::Tree,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('a'),
+        Act {
+            desc: "add entry",
+            handler: |app| {
+                app.tree_editor.as_mut().unwrap().add_entry();
+                None
+            },
+        },
+        Scope::Tree,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('x'),
+        Act {
+            desc: "delete node",
+            handler: |app| {
+                app.tree_editor.as_mut().unwrap().delete_current();
+                None
+            },
+        },
+        Scope::Tree,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('e'),
+        Act {
+            desc: "edit (e+v/k/e)",
+            handler: |app| {
+                app.tree_editor.as_mut().unwrap().set_pending_leader(true);
+                None
+            },
+        },
+        Scope::Tree,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('r'),
+        Act { desc: "refresh", handler: tree_refresh },
+        Scope::Tree,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Esc,
+        Act { desc: "exit tree", handler: tree_exit },
+        Scope::Tree,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('q'),
+        Act { desc: "exit tree", handler: tree_exit },
+        Scope::Tree,
+    );
+
+    // OrderedEntries
+    bind(
+        &mut keymap,
+        KeyCode::Char('n'),
+        Act { desc: "next page", handler: |_| Some(Action::LoadNextOrderedEntriesPage) },
+        Scope::OrderedEntries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('p'),
+        Act { desc: "prev page", handler: |_| Some(Action::LoadPrevOrderedEntriesPage) },
+        Scope::OrderedEntries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('r'),
+        Act { desc: "refresh", handler: |_| Some(Action::RefreshOrderedEntries) },
+        Scope::OrderedEntries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('/'),
+        Act {
+            desc: "search",
+            handler: |app| {
+                app.ordered_entries_search_active = true;
+                app.status = "loading all entries for search...".to_string();
+                Some(Action::LoadAllOrderedEntriesForSearch)
+            },
+        },
+        Scope::OrderedEntries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('c'),
+        Act {
+            desc: "create",
+            handler: |app| {
+                app.ordered_create_choosing = true;
+                None
+            },
+        },
+        Scope::OrderedEntries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char(' '),
+        Act {
+            desc: "select",
+            handler: |app| {
+                app.toggle_ordered_entry_mark();
+                None
+            },
+        },
+        Scope::OrderedEntries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('a'),
+        Act {
+            desc: "select all",
+            handler: |app| {
+                app.toggle_select_all_ordered_visible();
+                None
+            },
+        },
+        Scope::OrderedEntries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('d'),
+        Act { desc: "delete", handler: ordered_entries_delete },
+        Scope::OrderedEntries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Enter,
+        Act { desc: "view", handler: ordered_entries_view },
+        Scope::OrderedEntries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('l'),
+        Act { desc: "view", handler: ordered_entries_view },
+        Scope::OrderedEntries,
+    );
+
+    // OrderedValue
+    bind(
+        &mut keymap,
+        KeyCode::Char('r'),
+        Act { desc: "refresh", handler: |_| Some(Action::LoadOrderedValue) },
+        Scope::OrderedValue,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Enter,
+        Act { desc: "edit", handler: ordered_value_edit },
+        Scope::OrderedValue,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('e'),
+        Act { desc: "edit", handler: ordered_value_edit },
+        Scope::OrderedValue,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('i'),
+        Act {
+            desc: "increment",
+            handler: |app| {
+                app.ordered_increment_edit.clear();
+                app.ordered_increment_editing = true;
+                None
+            },
+        },
+        Scope::OrderedValue,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('d'),
+        Act {
+            desc: "delete",
+            handler: |app| {
+                app.arm_confirm(PendingConfirm::DeleteOrderedEntry);
+                None
+            },
+        },
+        Scope::OrderedValue,
+    );
+
+    // MemoryEntries
+    bind(
+        &mut keymap,
+        KeyCode::Char('n'),
+        Act { desc: "next page", handler: |_| Some(Action::LoadNextMemoryItemsPage) },
+        Scope::MemoryEntries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('p'),
+        Act { desc: "prev page", handler: |_| Some(Action::LoadPrevMemoryItemsPage) },
+        Scope::MemoryEntries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('r'),
+        Act { desc: "refresh", handler: |_| Some(Action::RefreshMemoryItems) },
+        Scope::MemoryEntries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('/'),
+        Act {
+            desc: "search",
+            handler: |app| {
+                app.memory_items_search_active = true;
+                app.status = "loading all items for search...".to_string();
+                Some(Action::LoadAllMemoryItemsForSearch)
+            },
+        },
+        Scope::MemoryEntries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('c'),
+        Act {
+            desc: "create",
+            handler: |app| {
+                app.memory_create_choosing = true;
+                None
+            },
+        },
+        Scope::MemoryEntries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char(' '),
+        Act {
+            desc: "select",
+            handler: |app| {
+                app.toggle_memory_item_mark();
+                None
+            },
+        },
+        Scope::MemoryEntries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('a'),
+        Act {
+            desc: "select all",
+            handler: |app| {
+                app.toggle_select_all_memory_visible();
+                None
+            },
+        },
+        Scope::MemoryEntries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('t'),
+        Act {
+            desc: "edit ttl",
+            handler: |app| {
+                if app.visible_memory_item_indices().is_empty() {
+                    return None;
+                }
+                app.memory_ttl_edit.set("3600");
+                app.memory_ttl_editing = true;
+                None
+            },
+        },
+        Scope::MemoryEntries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('d'),
+        Act { desc: "delete", handler: memory_entries_delete },
+        Scope::MemoryEntries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Enter,
+        Act { desc: "view", handler: memory_entries_view },
+        Scope::MemoryEntries,
+    );
+    bind(
+        &mut keymap,
+        KeyCode::Char('l'),
+        Act { desc: "view", handler: memory_entries_view },
+        Scope::MemoryEntries,
+    );
+
+    keymap
+}
+
+fn menu_open(app: &mut App) -> Option<Action> {
+    let service = app.menu_items[app.menu_selected].1;
+    match service {
+        SERVICE_ACCOUNT if app.logged_in => Some(Action::Logout),
+        SERVICE_ACCOUNT => Some(Action::Login),
+        _ => {
+            app.pending_service = service;
+            app.status.clear();
+            app.universe_choice_selected = 0;
+            app.screen = Screen::UniverseChoice;
+            None
+        }
+    }
+}
+
+fn universe_choice_select(app: &mut App) -> Option<Action> {
+    match app.universe_choice_selected {
+        UNIVERSE_CHOICE_ENTER_ID => {
+            app.universe_input.clear();
+            app.screen = Screen::UniverseInput;
+            None
+        }
+        UNIVERSE_CHOICE_LIST_ALL => {
+            if app.available_universes.is_empty() {
+                Some(Action::LoadUniverses)
+            } else {
+                app.universe_select_selected = 0;
+                app.screen = Screen::UniverseSelect;
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn universe_select_choose(app: &mut App) -> Option<Action> {
+    let visible = app.visible_universe_indices();
+    let &index = visible.get(app.universe_select_selected)?;
+    let universe_id = app.available_universes[index];
+    app.universe_id = universe_id;
+    enter_service(app)
+}
+
+fn stores_open(app: &mut App) -> Option<Action> {
+    let store = app.stores.get(app.stores_selected)?;
+    if store.state.as_deref().is_some_and(|s| s != "ACTIVE") {
+        return None;
+    }
+    app.data_store_id = store.id.clone();
+    app.entries_next_page_token = None;
+    app.screen = Screen::Entries;
+    Some(Action::LoadEntries)
+}
+
+fn stores_delete(app: &mut App) -> Option<Action> {
+    if !app.stores_marked.is_empty() {
+        app.arm_confirm(PendingConfirm::BulkDeleteStores);
+        return None;
+    }
+    let store = app.stores.get(app.stores_selected)?;
+    if store.state.as_deref().is_some_and(|s| s != "ACTIVE") {
+        return None;
+    }
+    app.arm_confirm(PendingConfirm::DeleteStore);
+    None
+}
+
+fn stores_undelete(app: &mut App) -> Option<Action> {
+    if !app.stores_marked.is_empty() {
+        app.arm_confirm(PendingConfirm::BulkUndeleteStores);
+        return None;
+    }
+    let store = app.stores.get(app.stores_selected)?;
+    if store.state.as_deref() != Some("ACTIVE") {
+        return Some(Action::UndeleteDataStore);
+    }
+    None
+}
+
+fn entries_delete(app: &mut App) -> Option<Action> {
+    if !app.entries_marked.is_empty() {
+        app.arm_confirm(PendingConfirm::BulkDeleteEntries);
+        return None;
+    }
+    if app.visible_entry_indices().is_empty() {
+        return None;
+    }
+    app.arm_confirm(PendingConfirm::DeleteEntry);
+    None
+}
+
+fn entries_view(app: &mut App) -> Option<Action> {
+    if app.visible_entry_indices().is_empty() {
+        return None;
+    }
+    app.screen = Screen::Value;
+    Some(Action::LoadValue)
+}
+
+fn value_scroll_up(app: &mut App) -> Option<Action> {
+    app.value_scroll = app.value_scroll.saturating_sub(1);
+    None
+}
+
+fn value_scroll_down(app: &mut App) -> Option<Action> {
+    let max_scroll = app.max_value_scroll();
+    app.value_scroll = (app.value_scroll + 1).min(max_scroll);
+    None
+}
+
+fn tree_yank(app: &mut App) -> Option<Action> {
+    let mut clipboard = app.clipboard.take();
+    if let Some(status) = app.tree_editor.as_ref().unwrap().yank(&mut clipboard) {
+        app.status = status;
+    }
+    app.clipboard = clipboard;
+    None
+}
+
+fn tree_paste(app: &mut App) -> Option<Action> {
+    let mut clipboard = app.clipboard.take();
+    if let Some(status) = app.tree_editor.as_mut().unwrap().paste(&mut clipboard) {
+        app.status = status;
+    }
+    app.clipboard = clipboard;
+    None
+}
+
+fn tree_delete_entry(app: &mut App) -> Option<Action> {
+    if app.tree_target != TreeTarget::Value {
+        return None;
+    }
+    let pending = match app.value_source {
+        ValueSource::DataStore => PendingConfirm::DeleteEntry,
+        ValueSource::MemoryStoreSortedMap => PendingConfirm::DeleteMemoryItem,
+    };
+    app.arm_confirm(pending);
+    None
+}
+
+fn tree_refresh(app: &mut App) -> Option<Action> {
+    if app.tree_target != TreeTarget::Value {
+        return None;
+    }
+    if app.tree_editor.as_ref().unwrap().dirty() {
+        app.arm_confirm(PendingConfirm::TreeRefresh);
+        None
+    } else {
+        Some(Action::RefreshTree)
+    }
+}
+
+fn tree_exit(app: &mut App) -> Option<Action> {
+    if app.tree_editor.as_ref().unwrap().dirty() {
+        app.arm_confirm(PendingConfirm::TreeQuit);
+    } else {
+        app.exit_tree_mode();
+    }
+    None
+}
+
+fn ordered_entries_delete(app: &mut App) -> Option<Action> {
+    if !app.ordered_entries_marked.is_empty() {
+        app.arm_confirm(PendingConfirm::BulkDeleteOrderedEntries);
+        return None;
+    }
+    if app.visible_ordered_entry_indices().is_empty() {
+        return None;
+    }
+    app.arm_confirm(PendingConfirm::DeleteOrderedEntry);
+    None
+}
+
+fn ordered_entries_view(app: &mut App) -> Option<Action> {
+    if app.visible_ordered_entry_indices().is_empty() {
+        return None;
+    }
+    app.screen = Screen::OrderedValue;
+    Some(Action::LoadOrderedValue)
+}
+
+fn ordered_value_edit(app: &mut App) -> Option<Action> {
+    app.ordered_value_edit = app.ordered_value.to_string();
+    app.ordered_value_editing = true;
+    None
+}
+
+fn memory_entries_delete(app: &mut App) -> Option<Action> {
+    if !app.memory_items_marked.is_empty() {
+        app.arm_confirm(PendingConfirm::BulkDeleteMemoryItems);
+        return None;
+    }
+    if app.visible_memory_item_indices().is_empty() {
+        return None;
+    }
+    app.arm_confirm(PendingConfirm::DeleteMemoryItem);
+    None
+}
+
+fn memory_entries_view(app: &mut App) -> Option<Action> {
+    if app.visible_memory_item_indices().is_empty() {
+        return None;
+    }
+    Some(Action::LoadMemoryValue)
+}
 
 fn enter_service(app: &mut App) -> Option<Action> {
     match app.pending_service {
@@ -198,33 +1286,6 @@ fn back_key(code: KeyCode, app: &mut App, screen: Screen) -> Option<Option<Actio
     }
 }
 
-const MENU_KEYS: &[KeyAction] = &[KeyAction {
-    keys: &[KeyCode::Enter, KeyCode::Char('l')],
-    hint: |_| Some("enter/l: open"),
-    handler: |app| {
-        let service = app.menu_items[app.menu_selected].1;
-        match service {
-            SERVICE_ACCOUNT if app.logged_in => Some(Action::Logout),
-            SERVICE_ACCOUNT => Some(Action::Login),
-            _ => {
-                app.pending_service = service;
-                app.status.clear();
-                app.universe_choice_selected = 0;
-                app.screen = Screen::UniverseChoice;
-                None
-            }
-        }
-    },
-}];
-
-pub(crate) fn menu_hints(app: &App) -> String {
-    MENU_KEYS
-        .iter()
-        .filter_map(|action| (action.hint)(app))
-        .collect::<Vec<_>>()
-        .join("   ")
-}
-
 pub(crate) fn handle_menu_key(app: &mut App, code: KeyCode) -> Option<Action> {
     let len = app.menu_items.len();
     if let Some(result) = list_nav_key(code, &mut app.menu_selected, len) {
@@ -233,42 +1294,7 @@ pub(crate) fn handle_menu_key(app: &mut App, code: KeyCode) -> Option<Action> {
     if let Some(result) = quit_key(code, app) {
         return result;
     }
-    for action in MENU_KEYS {
-        if action.keys.contains(&code) {
-            return (action.handler)(app);
-        }
-    }
-    None
-}
-
-const UNIVERSE_CHOICE_KEYS: &[KeyAction] = &[KeyAction {
-    keys: &[KeyCode::Enter, KeyCode::Char('l')],
-    hint: |_| Some("enter/l: select"),
-    handler: |app| match app.universe_choice_selected {
-        UNIVERSE_CHOICE_ENTER_ID => {
-            app.universe_input.clear();
-            app.screen = Screen::UniverseInput;
-            None
-        }
-        UNIVERSE_CHOICE_LIST_ALL => {
-            if app.available_universes.is_empty() {
-                Some(Action::LoadUniverses)
-            } else {
-                app.universe_select_selected = 0;
-                app.screen = Screen::UniverseSelect;
-                None
-            }
-        }
-        _ => None,
-    },
-}];
-
-pub(crate) fn universe_choice_hints(app: &App) -> String {
-    UNIVERSE_CHOICE_KEYS
-        .iter()
-        .filter_map(|action| (action.hint)(app))
-        .collect::<Vec<_>>()
-        .join("   ")
+    dispatch(app, Scope::Menu, code, KeyModifiers::empty())
 }
 
 pub(crate) fn handle_universe_choice_key(app: &mut App, code: KeyCode) -> Option<Action> {
@@ -285,42 +1311,7 @@ pub(crate) fn handle_universe_choice_key(app: &mut App, code: KeyCode) -> Option
     if let Some(result) = quit_key(code, app) {
         return result;
     }
-    for action in UNIVERSE_CHOICE_KEYS {
-        if action.keys.contains(&code) {
-            return (action.handler)(app);
-        }
-    }
-    None
-}
-
-const UNIVERSE_SELECT_KEYS: &[KeyAction] = &[
-    KeyAction {
-        keys: &[KeyCode::Char('/')],
-        hint: |_| Some("/: search"),
-        handler: |app| {
-            app.universe_search_active = true;
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Enter, KeyCode::Char('l')],
-        hint: |_| Some("enter/l: select"),
-        handler: |app| {
-            let visible = app.visible_universe_indices();
-            let &index = visible.get(app.universe_select_selected)?;
-            let universe_id = app.available_universes[index];
-            app.universe_id = universe_id;
-            enter_service(app)
-        },
-    },
-];
-
-pub(crate) fn universe_select_hints(app: &App) -> String {
-    UNIVERSE_SELECT_KEYS
-        .iter()
-        .filter_map(|action| (action.hint)(app))
-        .collect::<Vec<_>>()
-        .join("   ")
+    dispatch(app, Scope::UniverseChoice, code, KeyModifiers::empty())
 }
 
 pub(crate) fn handle_universe_select_key(app: &mut App, code: KeyCode) -> Option<Action> {
@@ -360,12 +1351,7 @@ pub(crate) fn handle_universe_select_key(app: &mut App, code: KeyCode) -> Option
         return None;
     }
 
-    for action in UNIVERSE_SELECT_KEYS {
-        if action.keys.contains(&code) {
-            return (action.handler)(app);
-        }
-    }
-    None
+    dispatch(app, Scope::UniverseSelect, code, KeyModifiers::empty())
 }
 
 pub(crate) fn handle_universe_input_key(app: &mut App, code: KeyCode) -> Option<Action> {
@@ -421,120 +1407,7 @@ pub(crate) fn handle_messaging_key(app: &mut App, code: KeyCode) -> Option<Actio
 }
 
 struct KeyAction {
-    keys: &'static [KeyCode],
     hint: fn(&App) -> Option<&'static str>,
-    handler: fn(&mut App) -> Option<Action>,
-}
-
-const STORES_KEYS: &[KeyAction] = &[
-    KeyAction {
-        keys: &[KeyCode::Enter, KeyCode::Char('l')],
-        hint: |app| match app.stores.get(app.stores_selected) {
-            Some(store) if store.state.as_deref().is_some_and(|s| s != "ACTIVE") => None,
-            Some(_) => Some("enter/l: open"),
-            None => None,
-        },
-        handler: |app| {
-            let store = app.stores.get(app.stores_selected)?;
-            if store.state.as_deref().is_some_and(|s| s != "ACTIVE") {
-                return None;
-            }
-            app.data_store_id = store.id.clone();
-            app.entries_next_page_token = None;
-            app.screen = Screen::Entries;
-            Some(Action::LoadEntries)
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char(' ')],
-        hint: |_| Some("space: select"),
-        handler: |app| {
-            app.toggle_store_mark();
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('a')],
-        hint: |_| Some("a: select all"),
-        handler: |app| {
-            app.toggle_select_all_stores();
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('r')],
-        hint: |_| Some("r: refresh"),
-        handler: |_| Some(Action::LoadStores),
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('c')],
-        hint: |_| Some("c: create entry in new store"),
-        handler: |app| {
-            app.stores_new_id.clear();
-            app.stores_new_active = true;
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('d')],
-        hint: |app| {
-            if !app.stores_marked.is_empty() {
-                return Some("d: delete (selected)");
-            }
-            match app.stores.get(app.stores_selected) {
-                Some(store) if store.state.as_deref().is_some_and(|s| s != "ACTIVE") => None,
-                Some(_) => Some("d: delete"),
-                None => None,
-            }
-        },
-        handler: |app| {
-            if !app.stores_marked.is_empty() {
-                app.arm_confirm(PendingConfirm::BulkDeleteStores);
-                return None;
-            }
-            let store = app.stores.get(app.stores_selected)?;
-            if store.state.as_deref().is_some_and(|s| s != "ACTIVE") {
-                return None;
-            }
-            app.arm_confirm(PendingConfirm::DeleteStore);
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('u')],
-        hint: |app| {
-            if !app.stores_marked.is_empty() {
-                Some("u: undelete (selected)")
-            } else if app
-                .stores
-                .get(app.stores_selected)
-                .is_some_and(|s| s.state.as_deref() != Some("ACTIVE"))
-            {
-                Some("u: undelete")
-            } else {
-                None
-            }
-        },
-        handler: |app| {
-            if !app.stores_marked.is_empty() {
-                app.arm_confirm(PendingConfirm::BulkUndeleteStores);
-                return None;
-            }
-            let store = app.stores.get(app.stores_selected)?;
-            if store.state.as_deref() != Some("ACTIVE") {
-                return Some(Action::UndeleteDataStore);
-            }
-            None
-        },
-    },
-];
-
-pub(crate) fn stores_hints(app: &App) -> String {
-    STORES_KEYS
-        .iter()
-        .filter_map(|action| (action.hint)(app))
-        .collect::<Vec<_>>()
-        .join("   ")
 }
 
 fn handle_stores_new_key(app: &mut App, code: KeyCode) -> Option<Action> {
@@ -592,134 +1465,24 @@ pub(crate) fn handle_stores_key(app: &mut App, code: KeyCode) -> Option<Action> 
         return result;
     }
 
-    for action in STORES_KEYS {
-        if action.keys.contains(&code) {
-            return (action.handler)(app);
-        }
-    }
-    None
-}
-
-const ENTRIES_KEYS: &[KeyAction] = &[
-    KeyAction {
-        keys: &[KeyCode::Char('n')],
-        hint: |app| {
-            app.entries_next_page_token
-                .is_some()
-                .then_some("n: next page")
-        },
-        handler: |_| Some(Action::LoadNextEntriesPage),
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('p')],
-        hint: |app| (app.entries_page_tokens.len() > 1).then_some("p: prev page"),
-        handler: |_| Some(Action::LoadPrevEntriesPage),
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('r')],
-        hint: |_| Some("r: refresh"),
-        handler: |_| Some(Action::RefreshEntries),
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('/')],
-        hint: |_| Some("/: search"),
-        handler: |app| {
-            app.entries_search_active = true;
-            app.status = "loading all entries for search...".to_string();
-            Some(Action::LoadAllEntriesForSearch)
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('c')],
-        hint: |_| Some("c: create"),
-        handler: |app| {
-            app.entries_create_choosing = true;
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char(' ')],
-        hint: |_| Some("space: select"),
-        handler: |app| {
-            app.toggle_entry_mark();
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('a')],
-        hint: |_| Some("a: select all"),
-        handler: |app| {
-            app.toggle_select_all_visible();
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('d')],
-        hint: |app| {
-            if app.visible_entry_indices().is_empty() && app.entries_marked.is_empty() {
-                None
-            } else if app.entries_marked.is_empty() {
-                Some("d: delete")
-            } else {
-                Some("d: delete (selected)")
-            }
-        },
-        handler: |app| {
-            if !app.entries_marked.is_empty() {
-                app.arm_confirm(PendingConfirm::BulkDeleteEntries);
-                return None;
-            }
-            if app.visible_entry_indices().is_empty() {
-                return None;
-            }
-            app.arm_confirm(PendingConfirm::DeleteEntry);
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Enter, KeyCode::Char('l')],
-        hint: |_| Some("enter/l: view"),
-        handler: |app| {
-            if app.visible_entry_indices().is_empty() {
-                return None;
-            }
-            app.screen = Screen::Value;
-            Some(Action::LoadValue)
-        },
-    },
-];
-
-pub(crate) fn entries_hints(app: &App) -> String {
-    ENTRIES_KEYS
-        .iter()
-        .filter_map(|action| (action.hint)(app))
-        .collect::<Vec<_>>()
-        .join("   ")
+    dispatch(app, Scope::Stores, code, KeyModifiers::empty())
 }
 
 const ENTRIES_CREATE_KEYS: &[KeyAction] = &[
     KeyAction {
-        keys: &[KeyCode::Tab, KeyCode::BackTab],
         hint: |_| Some("tab: switch field"),
-        handler: |_| None,
     },
     KeyAction {
-        keys: &[KeyCode::Enter],
         hint: |_| Some("enter: create"),
-        handler: |_| None,
     },
     KeyAction {
-        keys: &[KeyCode::Char('t')],
         hint: |app| {
             (app.entries_create_field == EntriesCreateField::Value)
                 .then_some("ctrl+t: tree edit value")
         },
-        handler: |_| None,
     },
     KeyAction {
-        keys: &[KeyCode::Esc],
         hint: |_| Some("esc: cancel"),
-        handler: |_| None,
     },
 ];
 
@@ -835,102 +1598,7 @@ pub(crate) fn handle_entries_key(app: &mut App, code: KeyCode, modifiers: KeyMod
         return Some(Action::LoadStores);
     }
 
-    for action in ENTRIES_KEYS {
-        if action.keys.contains(&code) {
-            return (action.handler)(app);
-        }
-    }
-    None
-}
-
-const VALUE_KEYS: &[KeyAction] = &[
-    KeyAction {
-        keys: &[KeyCode::Char('r')],
-        hint: |_| Some("r: refresh"),
-        handler: |_| Some(Action::LoadValue),
-    },
-    KeyAction {
-        keys: &[KeyCode::Enter, KeyCode::Char('l')],
-        hint: |_| Some("enter/l: tree edit"),
-        handler: |app| {
-            app.enter_tree_mode();
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('e')],
-        hint: |_| Some("e: edit in $EDITOR"),
-        handler: |_| Some(Action::EditValueExternal),
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('d')],
-        hint: |_| Some("d: delete"),
-        handler: |app| {
-            let pending = match app.value_source {
-                ValueSource::DataStore => PendingConfirm::DeleteEntry,
-                ValueSource::MemoryStoreSortedMap => PendingConfirm::DeleteMemoryItem,
-            };
-            app.arm_confirm(pending);
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('t')],
-        hint: |app| {
-            (app.value_source == ValueSource::MemoryStoreSortedMap).then_some("t: edit ttl")
-        },
-        handler: |app| {
-            if app.value_source != ValueSource::MemoryStoreSortedMap {
-                return None;
-            }
-            app.memory_ttl_edit
-                .set(app.memory_item_ttl_seconds.to_string());
-            app.memory_ttl_editing = true;
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Up, KeyCode::Char('k')],
-        hint: |_| None,
-        handler: |app| {
-            app.value_scroll = app.value_scroll.saturating_sub(1);
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Down, KeyCode::Char('j')],
-        hint: |_| None,
-        handler: |app| {
-            let max_scroll = app.max_value_scroll();
-            app.value_scroll = (app.value_scroll + 1).min(max_scroll);
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::PageUp],
-        hint: |_| None,
-        handler: |app| {
-            app.value_scroll = app.value_scroll.saturating_sub(10);
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::PageDown],
-        hint: |_| None,
-        handler: |app| {
-            let max_scroll = app.max_value_scroll();
-            app.value_scroll = (app.value_scroll + 10).min(max_scroll);
-            None
-        },
-    },
-];
-
-pub(crate) fn value_hints(app: &App) -> String {
-    VALUE_KEYS
-        .iter()
-        .filter_map(|action| (action.hint)(app))
-        .collect::<Vec<_>>()
-        .join("   ")
+    dispatch(app, Scope::Entries, code, modifiers)
 }
 
 pub(crate) fn handle_value_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
@@ -967,150 +1635,7 @@ pub(crate) fn handle_value_key(app: &mut App, code: KeyCode, modifiers: KeyModif
         return result;
     }
 
-    for action in VALUE_KEYS {
-        if action.keys.contains(&code) {
-            return (action.handler)(app);
-        }
-    }
-    None
-}
-
-const TREE_KEYS: &[KeyAction] = &[
-    KeyAction {
-        keys: &[KeyCode::Char('s')],
-        hint: |_| Some("ctrl+s: save"),
-        handler: |_| None,
-    },
-    KeyAction {
-        keys: &[KeyCode::Up, KeyCode::Char('k')],
-        hint: |_| None,
-        handler: |app| {
-            app.tree_editor.as_mut().unwrap().move_cursor(-1);
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Down, KeyCode::Char('j')],
-        hint: |_| None,
-        handler: |app| {
-            app.tree_editor.as_mut().unwrap().move_cursor(1);
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char(' ')],
-        hint: |_| Some("space: fold/unfold"),
-        handler: |app| {
-            app.tree_editor.as_mut().unwrap().toggle();
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Enter],
-        hint: |_| None,
-        handler: |app| {
-            app.tree_editor.as_mut().unwrap().edit_leaf();
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('y')],
-        hint: |_| Some("y: yank"),
-        handler: |app| {
-            let mut clipboard = app.clipboard.take();
-            if let Some(status) = app.tree_editor.as_ref().unwrap().yank(&mut clipboard) {
-                app.status = status;
-            }
-            app.clipboard = clipboard;
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('p')],
-        hint: |_| Some("p: paste"),
-        handler: |app| {
-            let mut clipboard = app.clipboard.take();
-            if let Some(status) = app.tree_editor.as_mut().unwrap().paste(&mut clipboard) {
-                app.status = status;
-            }
-            app.clipboard = clipboard;
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('d')],
-        hint: |app| (app.tree_target == TreeTarget::Value).then_some("d: delete entry"),
-        handler: |app| {
-            if app.tree_target != TreeTarget::Value {
-                return None;
-            }
-            let pending = match app.value_source {
-                ValueSource::DataStore => PendingConfirm::DeleteEntry,
-                ValueSource::MemoryStoreSortedMap => PendingConfirm::DeleteMemoryItem,
-            };
-            app.arm_confirm(pending);
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('a')],
-        hint: |_| Some("a: add entry"),
-        handler: |app| {
-            app.tree_editor.as_mut().unwrap().add_entry();
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('x')],
-        hint: |_| Some("x: delete node"),
-        handler: |app| {
-            app.tree_editor.as_mut().unwrap().delete_current();
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('e')],
-        hint: |_| Some("e: edit"),
-        handler: |app| {
-            app.tree_editor.as_mut().unwrap().set_pending_leader(true);
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('r')],
-        hint: |app| (app.tree_target == TreeTarget::Value).then_some("r: refresh"),
-        handler: |app| {
-            if app.tree_target != TreeTarget::Value {
-                return None;
-            }
-            if app.tree_editor.as_ref().unwrap().dirty() {
-                app.arm_confirm(PendingConfirm::TreeRefresh);
-                None
-            } else {
-                Some(Action::RefreshTree)
-            }
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Esc, KeyCode::Char('q')],
-        hint: |_| Some("esc/q: exit tree"),
-        handler: |app| {
-            if app.tree_editor.as_ref().unwrap().dirty() {
-                app.arm_confirm(PendingConfirm::TreeQuit);
-            } else {
-                app.exit_tree_mode();
-            }
-            None
-        },
-    },
-];
-
-pub(crate) fn tree_hints(app: &App) -> String {
-    TREE_KEYS
-        .iter()
-        .filter_map(|action| (action.hint)(app))
-        .collect::<Vec<_>>()
-        .join("   ")
+    dispatch(app, Scope::Value, code, modifiers)
 }
 
 pub(crate) fn handle_ordered_store_input_key(app: &mut App, code: KeyCode) -> Option<Action> {
@@ -1155,105 +1680,6 @@ pub(crate) fn handle_ordered_store_input_key(app: &mut App, code: KeyCode) -> Op
             None
         }
     }
-}
-
-const ORDERED_ENTRIES_KEYS: &[KeyAction] = &[
-    KeyAction {
-        keys: &[KeyCode::Char('n')],
-        hint: |app| {
-            app.ordered_entries_next_page_token
-                .is_some()
-                .then_some("n: next page")
-        },
-        handler: |_| Some(Action::LoadNextOrderedEntriesPage),
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('p')],
-        hint: |app| (app.ordered_entries_page_tokens.len() > 1).then_some("p: prev page"),
-        handler: |_| Some(Action::LoadPrevOrderedEntriesPage),
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('r')],
-        hint: |_| Some("r: refresh"),
-        handler: |_| Some(Action::RefreshOrderedEntries),
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('/')],
-        hint: |_| Some("/: search"),
-        handler: |app| {
-            app.ordered_entries_search_active = true;
-            app.status = "loading all entries for search...".to_string();
-            Some(Action::LoadAllOrderedEntriesForSearch)
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('c')],
-        hint: |_| Some("c: create"),
-        handler: |app| {
-            app.ordered_create_choosing = true;
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char(' ')],
-        hint: |_| Some("space: select"),
-        handler: |app| {
-            app.toggle_ordered_entry_mark();
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('a')],
-        hint: |_| Some("a: select all"),
-        handler: |app| {
-            app.toggle_select_all_ordered_visible();
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('d')],
-        hint: |app| {
-            if app.visible_ordered_entry_indices().is_empty()
-                && app.ordered_entries_marked.is_empty()
-            {
-                None
-            } else if app.ordered_entries_marked.is_empty() {
-                Some("d: delete")
-            } else {
-                Some("d: delete (selected)")
-            }
-        },
-        handler: |app| {
-            if !app.ordered_entries_marked.is_empty() {
-                app.arm_confirm(PendingConfirm::BulkDeleteOrderedEntries);
-                return None;
-            }
-            if app.visible_ordered_entry_indices().is_empty() {
-                return None;
-            }
-            app.arm_confirm(PendingConfirm::DeleteOrderedEntry);
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Enter, KeyCode::Char('l')],
-        hint: |_| Some("enter/l: view"),
-        handler: |app| {
-            if app.visible_ordered_entry_indices().is_empty() {
-                return None;
-            }
-            app.screen = Screen::OrderedValue;
-            Some(Action::LoadOrderedValue)
-        },
-    },
-];
-
-pub(crate) fn ordered_entries_hints(app: &App) -> String {
-    ORDERED_ENTRIES_KEYS
-        .iter()
-        .filter_map(|action| (action.hint)(app))
-        .collect::<Vec<_>>()
-        .join("   ")
 }
 
 fn is_numeric_input_char(c: char) -> bool {
@@ -1353,54 +1779,7 @@ pub(crate) fn handle_ordered_entries_key(app: &mut App, code: KeyCode) -> Option
         return None;
     }
 
-    for action in ORDERED_ENTRIES_KEYS {
-        if action.keys.contains(&code) {
-            return (action.handler)(app);
-        }
-    }
-    None
-}
-
-const ORDERED_VALUE_KEYS: &[KeyAction] = &[
-    KeyAction {
-        keys: &[KeyCode::Char('r')],
-        hint: |_| Some("r: refresh"),
-        handler: |_| Some(Action::LoadOrderedValue),
-    },
-    KeyAction {
-        keys: &[KeyCode::Enter, KeyCode::Char('e')],
-        hint: |_| Some("enter/e: edit"),
-        handler: |app| {
-            app.ordered_value_edit = app.ordered_value.to_string();
-            app.ordered_value_editing = true;
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('i')],
-        hint: |_| Some("i: increment"),
-        handler: |app| {
-            app.ordered_increment_edit.clear();
-            app.ordered_increment_editing = true;
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('d')],
-        hint: |_| Some("d: delete"),
-        handler: |app| {
-            app.arm_confirm(PendingConfirm::DeleteOrderedEntry);
-            None
-        },
-    },
-];
-
-pub(crate) fn ordered_value_hints(app: &App) -> String {
-    ORDERED_VALUE_KEYS
-        .iter()
-        .filter_map(|action| (action.hint)(app))
-        .collect::<Vec<_>>()
-        .join("   ")
+    dispatch(app, Scope::OrderedEntries, code, KeyModifiers::empty())
 }
 
 pub(crate) fn handle_ordered_value_key(app: &mut App, code: KeyCode) -> Option<Action> {
@@ -1446,12 +1825,7 @@ pub(crate) fn handle_ordered_value_key(app: &mut App, code: KeyCode) -> Option<A
         return result;
     }
 
-    for action in ORDERED_VALUE_KEYS {
-        if action.keys.contains(&code) {
-            return (action.handler)(app);
-        }
-    }
-    None
+    dispatch(app, Scope::OrderedValue, code, KeyModifiers::empty())
 }
 
 fn handle_tree_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
@@ -1496,10 +1870,6 @@ fn handle_tree_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Opt
         return result;
     }
 
-    if code == KeyCode::Char('s') && modifiers.contains(KeyModifiers::CONTROL) {
-        return Some(Action::SaveTree);
-    }
-
     let editor = app.tree_editor.as_mut().unwrap();
     if editor.pending_leader() {
         editor.set_pending_leader(false);
@@ -1517,12 +1887,7 @@ fn handle_tree_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Opt
         };
     }
 
-    for action in TREE_KEYS {
-        if action.keys.contains(&code) {
-            return (action.handler)(app);
-        }
-    }
-    None
+    dispatch(app, Scope::Tree, code, modifiers)
 }
 
 pub(crate) fn handle_memory_store_input_key(app: &mut App, code: KeyCode) -> Option<Action> {
@@ -1553,141 +1918,25 @@ pub(crate) fn handle_memory_store_input_key(app: &mut App, code: KeyCode) -> Opt
     }
 }
 
-const MEMORY_ENTRIES_KEYS: &[KeyAction] = &[
-    KeyAction {
-        keys: &[KeyCode::Char('n')],
-        hint: |app| {
-            app.memory_items_next_page_token
-                .is_some()
-                .then_some("n: next page")
-        },
-        handler: |_| Some(Action::LoadNextMemoryItemsPage),
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('p')],
-        hint: |app| (app.memory_items_page_tokens.len() > 1).then_some("p: prev page"),
-        handler: |_| Some(Action::LoadPrevMemoryItemsPage),
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('r')],
-        hint: |_| Some("r: refresh"),
-        handler: |_| Some(Action::RefreshMemoryItems),
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('/')],
-        hint: |_| Some("/: search"),
-        handler: |app| {
-            app.memory_items_search_active = true;
-            app.status = "loading all items for search...".to_string();
-            Some(Action::LoadAllMemoryItemsForSearch)
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('c')],
-        hint: |_| Some("c: create"),
-        handler: |app| {
-            app.memory_create_choosing = true;
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char(' ')],
-        hint: |_| Some("space: select"),
-        handler: |app| {
-            app.toggle_memory_item_mark();
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('a')],
-        hint: |_| Some("a: select all"),
-        handler: |app| {
-            app.toggle_select_all_memory_visible();
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('t')],
-        hint: |app| (!app.visible_memory_item_indices().is_empty()).then_some("t: edit ttl"),
-        handler: |app| {
-            if app.visible_memory_item_indices().is_empty() {
-                return None;
-            }
-            app.memory_ttl_edit.set("3600");
-            app.memory_ttl_editing = true;
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Char('d')],
-        hint: |app| {
-            if app.visible_memory_item_indices().is_empty() && app.memory_items_marked.is_empty() {
-                None
-            } else if app.memory_items_marked.is_empty() {
-                Some("d: delete")
-            } else {
-                Some("d: delete (selected)")
-            }
-        },
-        handler: |app| {
-            if !app.memory_items_marked.is_empty() {
-                app.arm_confirm(PendingConfirm::BulkDeleteMemoryItems);
-                return None;
-            }
-            if app.visible_memory_item_indices().is_empty() {
-                return None;
-            }
-            app.arm_confirm(PendingConfirm::DeleteMemoryItem);
-            None
-        },
-    },
-    KeyAction {
-        keys: &[KeyCode::Enter, KeyCode::Char('l')],
-        hint: |_| Some("enter/l: view"),
-        handler: |app| {
-            if app.visible_memory_item_indices().is_empty() {
-                return None;
-            }
-            Some(Action::LoadMemoryValue)
-        },
-    },
-];
-
 pub(crate) fn memory_store_input_hints(_app: &App) -> String {
     "type a sorted map name   enter: confirm   esc: back".to_string()
 }
 
-pub(crate) fn memory_entries_hints(app: &App) -> String {
-    MEMORY_ENTRIES_KEYS
-        .iter()
-        .filter_map(|action| (action.hint)(app))
-        .collect::<Vec<_>>()
-        .join("   ")
-}
-
 const MEMORY_CREATE_KEYS: &[KeyAction] = &[
     KeyAction {
-        keys: &[KeyCode::Tab, KeyCode::BackTab],
         hint: |_| Some("tab: switch field"),
-        handler: |_| None,
     },
     KeyAction {
-        keys: &[KeyCode::Enter],
         hint: |_| Some("enter: create"),
-        handler: |_| None,
     },
     KeyAction {
-        keys: &[KeyCode::Char('t')],
         hint: |app| {
             (app.memory_create_field == MemoryCreateField::Value)
                 .then_some("ctrl+t: tree edit value")
         },
-        handler: |_| None,
     },
     KeyAction {
-        keys: &[KeyCode::Esc],
         hint: |_| Some("esc: cancel"),
-        handler: |_| None,
     },
 ];
 
@@ -1830,10 +2079,5 @@ pub(crate) fn handle_memory_entries_key(
         return None;
     }
 
-    for action in MEMORY_ENTRIES_KEYS {
-        if action.keys.contains(&code) {
-            return (action.handler)(app);
-        }
-    }
-    None
+    dispatch(app, Scope::MemoryEntries, code, modifiers)
 }

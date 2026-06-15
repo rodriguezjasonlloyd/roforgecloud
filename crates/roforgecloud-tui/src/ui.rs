@@ -815,11 +815,11 @@ const BACK_QUIT: &str = "esc/h: back   q: quit";
 
 fn screen_binds(app: &App) -> String {
     match app.screen {
-        Screen::Menu => format!("{MOVE}   {}   {QUIT}", crate::update::menu_hints(app)),
+        Screen::Menu => format!("{MOVE}   {}   {QUIT}", crate::update::hint_bar(app, crate::update::Scope::Menu)),
         Screen::UniverseChoice => {
             format!(
                 "{MOVE}   {}   {BACK_QUIT}",
-                crate::update::universe_choice_hints(app)
+                crate::update::hint_bar(app, crate::update::Scope::UniverseChoice)
             )
         }
         Screen::UniverseSelect if app.universe_search_active => {
@@ -828,38 +828,38 @@ fn screen_binds(app: &App) -> String {
         Screen::UniverseSelect => {
             format!(
                 "{MOVE}   {}   {BACK_QUIT}",
-                crate::update::universe_select_hints(app)
+                crate::update::hint_bar(app, crate::update::Scope::UniverseSelect)
             )
         }
         Screen::UniverseInput => "type a universe id   enter: confirm   esc: back".to_string(),
         Screen::Stores if app.stores_new_active => {
             "type a data store id   enter: continue   esc: cancel".to_string()
         }
-        Screen::Stores => format!("{MOVE}   {}   {BACK_QUIT}", crate::update::stores_hints(app)),
+        Screen::Stores => format!("{MOVE}   {}   {BACK_QUIT}", crate::update::hint_bar(app, crate::update::Scope::Stores)),
         Screen::Entries if app.entries_search_active => {
             "type to search by id or username   enter/esc: confirm".to_string()
         }
         Screen::Entries if app.tree_editor.as_ref().is_some_and(|t| t.is_editing()) => {
             "type to edit   enter: confirm   esc: cancel".to_string()
         }
-        Screen::Entries if app.tree_editor.is_some() => format!("{MOVE}   {}", crate::update::tree_hints(app)),
+        Screen::Entries if app.tree_editor.is_some() => format!("{MOVE}   {}", crate::update::hint_bar(app, crate::update::Scope::Tree)),
         Screen::Entries if app.entries_create_choosing => {
             "n: form   e: $EDITOR   esc: cancel".to_string()
         }
         Screen::Entries if app.entries_create_active => crate::update::entries_create_hints(app),
-        Screen::Entries => format!("{MOVE}   {}   {BACK_QUIT}", crate::update::entries_hints(app)),
+        Screen::Entries => format!("{MOVE}   {}   {BACK_QUIT}", crate::update::hint_bar(app, crate::update::Scope::Entries)),
         Screen::Value if app.tree_editor.as_ref().is_some_and(|t| t.is_editing()) => {
             "type to edit   enter: confirm   esc: cancel".to_string()
         }
         Screen::Value if app.tree_editor.is_some() => {
-            format!("{MOVE}   {}", crate::update::tree_hints(app))
+            format!("{MOVE}   {}", crate::update::hint_bar(app, crate::update::Scope::Tree))
         }
         Screen::Value if app.memory_ttl_editing => {
             "type ttl seconds   enter: confirm   esc: cancel".to_string()
         }
         Screen::Value => format!(
             "{SCROLL}   pgup/pgdn: scroll x10   {}   {BACK_QUIT}",
-            crate::update::value_hints(app)
+            crate::update::hint_bar(app, crate::update::Scope::Value)
         ),
         Screen::Messaging => "tab: switch field   enter: publish   esc: back".to_string(),
         Screen::OrderedStoreInput => "tab: switch field   enter: confirm   esc: back".to_string(),
@@ -875,7 +875,7 @@ fn screen_binds(app: &App) -> String {
         Screen::OrderedEntries => {
             format!(
                 "{MOVE}   {}   {BACK_QUIT}",
-                crate::update::ordered_entries_hints(app)
+                crate::update::hint_bar(app, crate::update::Scope::OrderedEntries)
             )
         }
         Screen::OrderedValue if app.ordered_value_editing => {
@@ -884,7 +884,7 @@ fn screen_binds(app: &App) -> String {
         Screen::OrderedValue if app.ordered_increment_editing => {
             "type amount   enter: confirm   esc: cancel".to_string()
         }
-        Screen::OrderedValue => format!("{}   {BACK_QUIT}", crate::update::ordered_value_hints(app)),
+        Screen::OrderedValue => format!("{}   {BACK_QUIT}", crate::update::hint_bar(app, crate::update::Scope::OrderedValue)),
         Screen::MemoryStoreInput => crate::update::memory_store_input_hints(app),
         Screen::MemoryStoreEntries if app.memory_items_search_active => {
             "type to search by id   enter/esc: confirm".to_string()
@@ -895,7 +895,7 @@ fn screen_binds(app: &App) -> String {
             "type to edit   enter: confirm   esc: cancel".to_string()
         }
         Screen::MemoryStoreEntries if app.tree_editor.is_some() => {
-            format!("{MOVE}   {}", crate::update::tree_hints(app))
+            format!("{MOVE}   {}", crate::update::hint_bar(app, crate::update::Scope::Tree))
         }
         Screen::MemoryStoreEntries if app.memory_create_choosing => {
             "n: form   e: $EDITOR   esc: cancel".to_string()
@@ -907,7 +907,7 @@ fn screen_binds(app: &App) -> String {
         Screen::MemoryStoreEntries => {
             format!(
                 "{MOVE}   {}   {BACK_QUIT}",
-                crate::update::memory_entries_hints(app)
+                crate::update::hint_bar(app, crate::update::Scope::MemoryEntries)
             )
         }
     }
