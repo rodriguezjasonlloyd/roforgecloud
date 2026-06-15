@@ -125,9 +125,13 @@ async fn build_client(
 }
 
 async fn run<B: ratatui::backend::Backend + io::Write>(
+
     terminal: &mut Terminal<B>,
     app: &mut App,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    B::Error: Send + Sync + 'static,
+{
     loop {
         app.check_confirm_timeout();
 
@@ -224,11 +228,15 @@ async fn run<B: ratatui::backend::Backend + io::Write>(
 }
 
 async fn run_editor<B: ratatui::backend::Backend + io::Write>(
+
     terminal: &mut Terminal<B>,
     app: &mut App,
     initial: &str,
     suffix: &str,
-) -> anyhow::Result<Option<String>> {
+) -> anyhow::Result<Option<String>>
+where
+    B::Error: Send + Sync + 'static,
+{
     let path = std::env::temp_dir().join(format!("roforgecloud-{}{suffix}", std::process::id()));
     std::fs::write(&path, initial)?;
 
@@ -264,9 +272,13 @@ async fn run_editor<B: ratatui::backend::Backend + io::Write>(
 }
 
 async fn edit_value_external<B: ratatui::backend::Backend + io::Write>(
+
     terminal: &mut Terminal<B>,
     app: &mut App,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    B::Error: Send + Sync + 'static,
+{
     let initial = app.value_text.clone();
     let Some(edited) = run_editor(terminal, app, &initial, ".json").await? else {
         return Ok(());
@@ -287,9 +299,13 @@ async fn edit_value_external<B: ratatui::backend::Backend + io::Write>(
 }
 
 async fn edit_tree_value_external<B: ratatui::backend::Backend + io::Write>(
+
     terminal: &mut Terminal<B>,
     app: &mut App,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    B::Error: Send + Sync + 'static,
+{
     let Some(editor) = &app.tree_editor else {
         return Ok(());
     };
@@ -343,9 +359,13 @@ async fn edit_tree_value_external<B: ratatui::backend::Backend + io::Write>(
 }
 
 async fn create_entry_external<B: ratatui::backend::Backend + io::Write>(
+
     terminal: &mut Terminal<B>,
     app: &mut App,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    B::Error: Send + Sync + 'static,
+{
     let template = "{\n  \"id\": \"\",\n  \"value\": null\n}\n";
     let Some(edited) = run_editor(terminal, app, template, "-create.json").await? else {
         return Ok(());
@@ -384,9 +404,13 @@ async fn create_entry_external<B: ratatui::backend::Backend + io::Write>(
 }
 
 async fn create_ordered_entry_external<B: ratatui::backend::Backend + io::Write>(
+
     terminal: &mut Terminal<B>,
     app: &mut App,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    B::Error: Send + Sync + 'static,
+{
     let template = "{\n  \"id\": \"\",\n  \"value\": 0\n}\n";
     let Some(edited) = run_editor(terminal, app, template, "-create-ordered.json").await? else {
         return Ok(());
@@ -425,9 +449,13 @@ async fn create_ordered_entry_external<B: ratatui::backend::Backend + io::Write>
 }
 
 async fn create_memory_item_external<B: ratatui::backend::Backend + io::Write>(
+
     terminal: &mut Terminal<B>,
     app: &mut App,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    B::Error: Send + Sync + 'static,
+{
     let template = "{\n  \"id\": \"\",\n  \"value\": null,\n  \"ttl\": 3600\n}\n";
     let Some(edited) = run_editor(terminal, app, template, "-create-memory.json").await? else {
         return Ok(());
@@ -468,10 +496,14 @@ async fn create_memory_item_external<B: ratatui::backend::Backend + io::Write>(
 }
 
 async fn perform_with_terminal_suspended<B: ratatui::backend::Backend + io::Write>(
+
     terminal: &mut Terminal<B>,
     app: &mut App,
     action: Action,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    B::Error: Send + Sync + 'static,
+{
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
 

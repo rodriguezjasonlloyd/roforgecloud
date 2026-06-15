@@ -16,11 +16,11 @@ crossterm.workspace = true
 dotenvy = "0.15"
 open = "5"
 ratatui.workspace = true
-ratatui-which-key = { version = "0.12", default-features = false }
+ratatui-which-key = "0.12"
 reqwest.workspace = true
 roforgecloud-core = { path = "../roforgecloud-core" }
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
-tui-textarea = "0.7"
+tui-textarea = { package = "ratatui-textarea", version = "0.9" }
 url.workspace = true

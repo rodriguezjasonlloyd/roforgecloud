@@ -49,101 +49,9 @@ impl std::fmt::Display for Act {
     }
 }
 
-/// Newtype around our crossterm version's `KeyEvent`, needed because
-/// `ratatui-which-key`'s built-in `Key` impl targets its own crossterm
-/// version (which may differ from the workspace's).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct AppKey(pub KeyEvent);
+pub(crate) type Keys = WhichKeyState<KeyEvent, Scope, Act, Category>;
 
-impl Key for AppKey {
-    fn display(&self) -> String {
-        if self.0.modifiers.contains(KeyModifiers::CONTROL) {
-            if let KeyCode::Char(c) = self.0.code {
-                return format!("<C-{}>", c.to_ascii_lowercase());
-            }
-        }
-        if self.0.modifiers.contains(KeyModifiers::ALT) {
-            if let KeyCode::Char(c) = self.0.code {
-                return format!("<M-{}>", c.to_ascii_lowercase());
-            }
-        }
-        match self.0.code {
-            KeyCode::Char(' ') => "Space".to_string(),
-            KeyCode::Char(c) => c.to_string(),
-            KeyCode::Tab => "Tab".to_string(),
-            KeyCode::Enter => "Enter".to_string(),
-            KeyCode::Backspace => "Backspace".to_string(),
-            KeyCode::Esc => "Esc".to_string(),
-            KeyCode::Up => "Up".to_string(),
-            KeyCode::Down => "Down".to_string(),
-            KeyCode::Left => "Left".to_string(),
-            KeyCode::Right => "Right".to_string(),
-            KeyCode::Home => "Home".to_string(),
-            KeyCode::End => "End".to_string(),
-            KeyCode::PageUp => "PageUp".to_string(),
-            KeyCode::PageDown => "PageDown".to_string(),
-            KeyCode::F(n) => format!("F{n}"),
-            _ => "?".to_string(),
-        }
-    }
-
-    fn is_backspace(&self) -> bool {
-        matches!(self.0.code, KeyCode::Backspace)
-    }
-
-    fn space() -> Self {
-        AppKey(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::empty()))
-    }
-
-    fn from_char(c: char) -> Option<Self> {
-        Some(AppKey(KeyEvent::new(KeyCode::Char(c), KeyModifiers::empty())))
-    }
-
-    fn from_special_name(name: &str) -> Option<Self> {
-        let lower = name.to_ascii_lowercase();
-
-        if lower.starts_with("c-") && lower.len() == 3 {
-            let c = lower.chars().nth(2)?;
-            return Some(AppKey(KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)));
-        }
-        if lower.starts_with("m-") && lower.len() == 3 {
-            let c = lower.chars().nth(2)?;
-            return Some(AppKey(KeyEvent::new(KeyCode::Char(c), KeyModifiers::ALT)));
-        }
-
-        let code = match lower.as_str() {
-            "tab" => KeyCode::Tab,
-            "enter" => KeyCode::Enter,
-            "bs" | "backspace" => KeyCode::Backspace,
-            "esc" | "escape" => KeyCode::Esc,
-            "up" => KeyCode::Up,
-            "down" => KeyCode::Down,
-            "left" => KeyCode::Left,
-            "right" => KeyCode::Right,
-            "home" => KeyCode::Home,
-            "end" => KeyCode::End,
-            "pgup" | "pageup" => KeyCode::PageUp,
-            "pgdn" | "pagedown" => KeyCode::PageDown,
-            "space" => KeyCode::Char(' '),
-            "lt" => KeyCode::Char('<'),
-            "gt" => KeyCode::Char('>'),
-            s if s.starts_with('f') && s.len() > 1 => {
-                let num: u8 = s[1..].parse().ok()?;
-                if !(1..=12).contains(&num) {
-                    return None;
-                }
-                KeyCode::F(num)
-            }
-            _ => return None,
-        };
-
-        Some(AppKey(KeyEvent::new(code, KeyModifiers::empty())))
-    }
-}
-
-pub(crate) type Keys = WhichKeyState<AppKey, Scope, Act, Category>;
-
-fn bind(keymap: &mut Keymap<AppKey, Scope, Act, Category>, code: KeyCode, act: Act, scope: Scope) {
+fn bind(keymap: &mut Keymap<KeyEvent, Scope, Act, Category>, code: KeyCode, act: Act, scope: Scope) {
     let seq = match code {
         KeyCode::Char(c) => c.to_string(),
         KeyCode::Enter => "<enter>".to_string(),
@@ -163,9 +71,7 @@ fn bind(keymap: &mut Keymap<AppKey, Scope, Act, Category>, code: KeyCode, act: A
 /// back to `None` (no action) if the key has no binding in that scope.
 fn dispatch(app: &mut App, scope: Scope, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
     app.which_key.set_scope(scope);
-    let act = app
-        .which_key
-        .handle_key(AppKey(KeyEvent::new(code, modifiers)))?;
+    let act = app.which_key.handle_key(KeyEvent::new(code, modifiers))?;
     (act.handler)(app)
 }
 
@@ -181,24 +87,7 @@ pub(crate) fn hint_bar(app: &App, scope: Scope) -> String {
         .join("   ")
 }
 
-/// Bindings for the active scope, grouped by which-key category, for the
-/// `?` help popup: `(category, [(key, description), ...])`.
-pub(crate) fn help_sections(app: &App) -> Vec<(String, Vec<(String, String)>)> {
-    app.which_key
-        .current_bindings()
-        .iter()
-        .map(|group| {
-            let bindings = group
-                .bindings
-                .iter()
-                .map(|binding| (binding.key.display(), binding.description.clone()))
-                .collect();
-            (group.category.clone(), bindings)
-        })
-        .collect()
-}
-
-pub(crate) fn build_keymap() -> Keymap<AppKey, Scope, Act, Category> {
+pub(crate) fn build_keymap() -> Keymap<KeyEvent, Scope, Act, Category> {
     let mut keymap = Keymap::new();
 
     // Menu

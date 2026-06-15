@@ -38,7 +38,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
     draw_info(frame, app, chunks[1]);
 
     if app.which_key.active {
-        draw_help(frame, app, frame.area());
+        draw_help(frame, app);
     }
 }
 
@@ -1097,38 +1097,6 @@ fn centered_rect_lines(percent_x: u16, height: u16, area: Rect) -> Rect {
     }
 }
 
-fn draw_help(frame: &mut Frame, app: &App, area: Rect) {
-    let popup = centered_rect(60, 60, area);
-
-    let mut lines = Vec::new();
-    for (category, binds) in crate::update::help_sections(app) {
-        if !lines.is_empty() {
-            lines.push(Line::from(""));
-        }
-        lines.push(Line::from(Span::styled(
-            category,
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        )));
-
-        let key_width = binds.iter().map(|(key, _)| key.len()).max().unwrap_or(0);
-        for (key, desc) in binds {
-            lines.push(Line::from(vec![
-                Span::styled(
-                    format!("  {key:<key_width$}  "),
-                    Style::default().fg(Color::Yellow),
-                ),
-                Span::raw(desc),
-            ]));
-        }
-    }
-
-    frame.render_widget(Clear, popup);
-    let paragraph = Paragraph::new(lines).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title("Keybinds (? or esc to close)"),
-    );
-    frame.render_widget(paragraph, popup);
+fn draw_help(frame: &mut Frame, app: &App) {
+    ratatui_which_key::WhichKey::new().render(frame.buffer_mut(), &app.which_key);
 }
