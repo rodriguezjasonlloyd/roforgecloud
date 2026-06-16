@@ -2,7 +2,6 @@ use roforgecloud_core::auth;
 use roforgecloud_core::oauth::{self, OAuthClient};
 use roforgecloud_core::opencloud::datastore::DataStoreEntryInfo;
 use roforgecloud_core::opencloud::memory_store::SortedMapItem;
-use roforgecloud_core::opencloud::ordered_datastore::OrderedDataStoreEntry;
 use roforgecloud_core::opencloud::{ListQuery, OpenCloudClient};
 
 use crate::tree_editor::TreeEditor;
@@ -299,21 +298,9 @@ pub struct App {
 
     pub ordered_store_input: crate::screens::ordered_store_input::State,
 
-    pub ordered_entries: Vec<OrderedDataStoreEntry>,
-    pub ordered_entries_selected: usize,
-    pub ordered_entries_next_page_token: Option<String>,
-    pub ordered_entries_page_tokens: Vec<Option<String>>,
-    pub ordered_entries_marked: std::collections::HashSet<usize>,
-    pub ordered_entries_search: TextField,
-    pub ordered_entries_search_active: bool,
+    pub ordered_entries: crate::screens::ordered_entries::State,
 
     pub ordered_value: crate::screens::ordered_value::State,
-
-    pub ordered_create_id: TextField,
-    pub ordered_create_value: TextField,
-    pub ordered_create_field: OrderedCreateField,
-    pub ordered_create_active: bool,
-    pub ordered_create_choosing: bool,
 
     pub value_source: ValueSource,
 
@@ -402,19 +389,8 @@ impl App {
             clipboard: arboard::Clipboard::new().ok(),
             messaging: crate::screens::messaging::State::new(),
             ordered_store_input: crate::screens::ordered_store_input::State::new(),
-            ordered_entries: Vec::new(),
-            ordered_entries_selected: 0,
-            ordered_entries_next_page_token: None,
-            ordered_entries_page_tokens: vec![None],
-            ordered_entries_marked: std::collections::HashSet::new(),
-            ordered_entries_search: TextField::default(),
-            ordered_entries_search_active: false,
+            ordered_entries: crate::screens::ordered_entries::State::new(),
             ordered_value: crate::screens::ordered_value::State::new(),
-            ordered_create_id: TextField::default(),
-            ordered_create_value: TextField::default(),
-            ordered_create_field: OrderedCreateField::Id,
-            ordered_create_active: false,
-            ordered_create_choosing: false,
             value_source: ValueSource::DataStore,
             memory_store_input: crate::screens::memory_store_input::State::new(),
             memory_items: Vec::new(),
@@ -886,7 +862,7 @@ impl App {
     pub fn needs_quit_confirm(&self) -> bool {
         !self.stores.marked.is_empty()
             || !self.entries_marked.is_empty()
-            || !self.ordered_entries_marked.is_empty()
+            || !self.ordered_entries.marked.is_empty()
             || !self.memory_items_marked.is_empty()
     }
 
@@ -908,9 +884,9 @@ impl App {
                     || self.memory_ttl_editing
             }
             Screen::OrderedEntries => {
-                self.ordered_entries_search_active
-                    || self.ordered_create_active
-                    || self.ordered_create_choosing
+                self.ordered_entries.search_active
+                    || self.ordered_entries.create_active
+                    || self.ordered_entries.create_choosing
             }
             Screen::OrderedValue => self.ordered_value.editing || self.ordered_value.increment_editing,
             Screen::MemoryStoreEntries => {
@@ -1309,28 +1285,28 @@ impl App {
     }
 
     pub async fn load_ordered_entries(&mut self) {
-        self.ordered_entries_page_tokens = vec![None];
+        self.ordered_entries.page_tokens = vec![None];
         self.load_ordered_entries_page().await;
     }
 
     pub async fn load_next_ordered_entries_page(&mut self) {
-        let Some(token) = self.ordered_entries_next_page_token.clone() else {
+        let Some(token) = self.ordered_entries.next_page_token.clone() else {
             return;
         };
-        self.ordered_entries_page_tokens.push(Some(token));
+        self.ordered_entries.page_tokens.push(Some(token));
         self.load_ordered_entries_page().await;
     }
 
     pub async fn load_prev_ordered_entries_page(&mut self) {
-        if self.ordered_entries_page_tokens.len() <= 1 {
+        if self.ordered_entries.page_tokens.len() <= 1 {
             return;
         }
-        self.ordered_entries_page_tokens.pop();
+        self.ordered_entries.page_tokens.pop();
         self.load_ordered_entries_page().await;
     }
 
     pub async fn load_ordered_entries_page(&mut self) {
-        let page_token = self.ordered_entries_page_tokens.last().cloned().flatten();
+        let page_token = self.ordered_entries.page_tokens.last().cloned().flatten();
 
         self.status = "loading entries...".to_string();
         match self
@@ -1348,12 +1324,12 @@ impl App {
             .await
         {
             Ok(result) => {
-                self.ordered_entries = result.ordered_data_store_entries;
-                self.ordered_entries_selected = 0;
-                self.ordered_entries_marked.clear();
-                self.ordered_entries_next_page_token = result.next_page_token;
-                let page = self.ordered_entries_page_tokens.len();
-                self.status = format!("{} entries (page {page})", self.ordered_entries.len());
+                self.ordered_entries.items = result.ordered_data_store_entries;
+                self.ordered_entries.selected = 0;
+                self.ordered_entries.marked.clear();
+                self.ordered_entries.next_page_token = result.next_page_token;
+                let page = self.ordered_entries.page_tokens.len();
+                self.status = format!("{} entries (page {page})", self.ordered_entries.items.len());
             }
             Err(err) => {
                 self.status = self.datastore_error(err);
@@ -1393,64 +1369,26 @@ impl App {
                 }
             }
         }
-        self.ordered_entries = all;
-        self.ordered_entries_selected = 0;
-        self.ordered_entries_marked.clear();
-        self.ordered_entries_next_page_token = None;
-        self.ordered_entries_page_tokens = vec![None];
+        self.ordered_entries.items = all;
+        self.ordered_entries.selected = 0;
+        self.ordered_entries.marked.clear();
+        self.ordered_entries.next_page_token = None;
+        self.ordered_entries.page_tokens = vec![None];
         self.status = format!(
             "{} entries (search across whole store)",
-            self.ordered_entries.len()
+            self.ordered_entries.items.len()
         );
     }
 
     pub fn visible_ordered_entry_indices(&self) -> Vec<usize> {
-        if self.ordered_entries_search.value.is_empty() {
-            return (0..self.ordered_entries.len()).collect();
-        }
-
-        let needle = self.ordered_entries_search.value.to_lowercase();
-        self.ordered_entries
-            .iter()
-            .enumerate()
-            .filter(|(_, entry)| entry.id.to_lowercase().contains(&needle))
-            .map(|(i, _)| i)
-            .collect()
-    }
-
-    fn current_ordered_entry_index(&self) -> Option<usize> {
-        self.visible_ordered_entry_indices()
-            .get(self.ordered_entries_selected)
-            .copied()
-    }
-
-    pub fn toggle_ordered_entry_mark(&mut self) {
-        if let Some(index) = self.current_ordered_entry_index() {
-            if !self.ordered_entries_marked.remove(&index) {
-                self.ordered_entries_marked.insert(index);
-            }
-        }
-    }
-
-    pub fn toggle_select_all_ordered_visible(&mut self) {
-        let visible = self.visible_ordered_entry_indices();
-        if visible
-            .iter()
-            .all(|i| self.ordered_entries_marked.contains(i))
-        {
-            for i in &visible {
-                self.ordered_entries_marked.remove(i);
-            }
-        } else {
-            self.ordered_entries_marked.extend(visible);
-        }
+        self.ordered_entries.visible_indices()
     }
 
     pub async fn load_ordered_value(&mut self) {
-        let Some(index) = self.current_ordered_entry_index() else {
+        let Some(index) = self.ordered_entries.current_index() else {
             return;
         };
-        let id = self.ordered_entries[index].id.clone();
+        let id = self.ordered_entries.items[index].id.clone();
 
         self.status = "loading value...".to_string();
         match self
@@ -1480,10 +1418,10 @@ impl App {
     }
 
     pub async fn save_ordered_value(&mut self) {
-        let Some(index) = self.current_ordered_entry_index() else {
+        let Some(index) = self.ordered_entries.current_index() else {
             return;
         };
-        let id = self.ordered_entries[index].id.clone();
+        let id = self.ordered_entries.items[index].id.clone();
 
         let value: f64 = match self.ordered_value.edit.parse() {
             Ok(value) => value,
@@ -1507,7 +1445,7 @@ impl App {
         {
             Ok(entry) => {
                 self.ordered_value.value = entry.value;
-                self.ordered_entries[index].value = entry.value;
+                self.ordered_entries.items[index].value = entry.value;
                 self.ordered_value.editing = false;
                 self.status = "saved".to_string();
             }
@@ -1518,10 +1456,10 @@ impl App {
     }
 
     pub async fn increment_ordered_entry(&mut self) {
-        let Some(index) = self.current_ordered_entry_index() else {
+        let Some(index) = self.ordered_entries.current_index() else {
             return;
         };
-        let id = self.ordered_entries[index].id.clone();
+        let id = self.ordered_entries.items[index].id.clone();
 
         let amount: f64 = match self.ordered_value.increment_edit.parse() {
             Ok(amount) => amount,
@@ -1545,7 +1483,7 @@ impl App {
         {
             Ok(entry) => {
                 self.ordered_value.value = entry.value;
-                self.ordered_entries[index].value = entry.value;
+                self.ordered_entries.items[index].value = entry.value;
                 self.ordered_value.increment_editing = false;
                 self.status = "incremented".to_string();
             }
@@ -1556,10 +1494,10 @@ impl App {
     }
 
     pub async fn delete_ordered_entry(&mut self) {
-        let Some(index) = self.current_ordered_entry_index() else {
+        let Some(index) = self.ordered_entries.current_index() else {
             return;
         };
-        let id = self.ordered_entries[index].id.clone();
+        let id = self.ordered_entries.items[index].id.clone();
 
         self.status = "deleting...".to_string();
         match self
@@ -1573,10 +1511,10 @@ impl App {
             .await
         {
             Ok(()) => {
-                self.ordered_entries.remove(index);
+                self.ordered_entries.items.remove(index);
                 let visible = self.visible_ordered_entry_indices().len();
-                if self.ordered_entries_selected >= visible {
-                    self.ordered_entries_selected = visible.saturating_sub(1);
+                if self.ordered_entries.selected >= visible {
+                    self.ordered_entries.selected = visible.saturating_sub(1);
                 }
                 if self.screen == Screen::OrderedValue {
                     self.screen = Screen::OrderedEntries;
@@ -1590,7 +1528,7 @@ impl App {
     }
 
     pub async fn bulk_delete_ordered_entries(&mut self) {
-        let mut indices: Vec<usize> = self.ordered_entries_marked.iter().copied().collect();
+        let mut indices: Vec<usize> = self.ordered_entries.marked.iter().copied().collect();
         indices.sort_unstable();
 
         let total = indices.len();
@@ -1603,7 +1541,7 @@ impl App {
         let mut errors = 0;
 
         for &i in &indices {
-            let id = self.ordered_entries[i].id.clone();
+            let id = self.ordered_entries.items[i].id.clone();
             self.status = format!("deleting {}/{total}...", deleted_indices.len() + errors + 1);
             match self
                 .client
@@ -1621,14 +1559,14 @@ impl App {
         }
 
         for &i in deleted_indices.iter().rev() {
-            self.ordered_entries.remove(i);
+            self.ordered_entries.items.remove(i);
         }
 
-        self.ordered_entries_marked.clear();
+        self.ordered_entries.marked.clear();
 
         let visible = self.visible_ordered_entry_indices().len();
-        if self.ordered_entries_selected >= visible {
-            self.ordered_entries_selected = visible.saturating_sub(1);
+        if self.ordered_entries.selected >= visible {
+            self.ordered_entries.selected = visible.saturating_sub(1);
         }
 
         self.status = if errors == 0 {
@@ -1639,12 +1577,12 @@ impl App {
     }
 
     pub async fn create_ordered_entry(&mut self) {
-        let id = self.ordered_create_id.value.trim();
+        let id = self.ordered_entries.create_id.value.trim();
         if id.is_empty() || id.len() > 63 {
             self.status = "entry id must be 1-63 characters".to_string();
             return;
         }
-        let value: f64 = match self.ordered_create_value.value.parse() {
+        let value: f64 = match self.ordered_entries.create_value.value.parse() {
             Ok(value) => value,
             Err(_) => {
                 self.status = "invalid number".to_string();
@@ -1665,9 +1603,9 @@ impl App {
             .await
         {
             Ok(_) => {
-                self.ordered_create_id.clear();
-                self.ordered_create_value.clear();
-                self.ordered_create_active = false;
+                self.ordered_entries.create_id.clear();
+                self.ordered_entries.create_value.clear();
+                self.ordered_entries.create_active = false;
                 self.status = "created".to_string();
                 self.load_ordered_entries_page().await;
             }

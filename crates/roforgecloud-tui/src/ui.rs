@@ -55,97 +55,7 @@ pub(crate) fn draw_ordered_store_input(frame: &mut Frame, app: &App, area: Rect)
 }
 
 pub(crate) fn draw_ordered_entries(frame: &mut Frame, app: &App, area: Rect) {
-    let visible = app.visible_ordered_entry_indices();
-
-    let items: Vec<ListItem> = visible
-        .iter()
-        .map(|&i| {
-            let entry = &app.ordered_entries[i];
-            let mut spans = Vec::new();
-            if !app.ordered_entries_marked.is_empty() {
-                let marker = if app.ordered_entries_marked.contains(&i) {
-                    "[x] "
-                } else {
-                    "[ ] "
-                };
-                spans.push(Span::raw(marker));
-            }
-            spans.push(Span::raw(format!("{}  =  {}", entry.id, entry.value)));
-            ListItem::new(Line::from(spans))
-        })
-        .collect();
-
-    let store_label = match app.universe_names.get(&app.universe_id) {
-        Some(name) => format!(
-            "{} (scope: {}, universe {} ({name}))",
-            app.ordered_store_input.store_id.value, app.ordered_store_input.scope.value, app.universe_id
-        ),
-        None => format!(
-            "{} (scope: {})",
-            app.ordered_store_input.store_id.value, app.ordered_store_input.scope.value
-        ),
-    };
-    let title = if app.ordered_entries_search.value.is_empty() {
-        if app.ordered_entries_marked.is_empty() {
-            store_label
-        } else {
-            format!(
-                "{store_label} ({} selected)",
-                app.ordered_entries_marked.len()
-            )
-        }
-    } else if app.ordered_entries_marked.is_empty() {
-        format!(
-            "{store_label} (search: {})",
-            app.ordered_entries_search.value
-        )
-    } else {
-        format!(
-            "{store_label} (search: {}, {} selected)",
-            app.ordered_entries_search.value,
-            app.ordered_entries_marked.len()
-        )
-    };
-
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title(title))
-        .highlight_style(HIGHLIGHT_STYLE);
-
-    let mut state = ListState::default();
-    if !visible.is_empty() {
-        state.select(Some(app.ordered_entries_selected));
-    }
-    frame.render_stateful_widget(list, area, &mut state);
-
-    if app.ordered_create_active {
-        draw_ordered_create_popup(frame, app, area);
-    }
-}
-
-fn draw_ordered_create_popup(frame: &mut Frame, app: &App, area: Rect) {
-    let id_active = app.ordered_create_field == OrderedCreateField::Id;
-    let value_active = app.ordered_create_field == OrderedCreateField::Value;
-    let max_lines = 5;
-
-    let popup = centered_rect_lines(40, max_lines + 2 + 3 + 2, area);
-    frame.render_widget(Clear, popup);
-    let block = Block::default().borders(Borders::ALL).title("Create Entry");
-    let inner = block.inner(popup);
-    frame.render_widget(block, popup);
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(0)])
-        .split(inner);
-
-    field_box(frame, rows[0], "Id", &app.ordered_create_id, id_active);
-    field_paragraph_box(
-        frame,
-        rows[1],
-        "Value",
-        &app.ordered_create_value,
-        value_active,
-    );
+    crate::screens::ordered_entries::draw(frame, app, area);
 }
 
 pub(crate) fn draw_ordered_value(frame: &mut Frame, app: &App, area: Rect) {
@@ -586,13 +496,13 @@ fn screen_binds(app: &App) -> String {
         Screen::Value => join_hints(&[SCROLL, &hint_bar_entries(app, Scope::Value), BACK_QUIT]),
         Screen::Messaging => InputHint::Messaging.to_string(),
         Screen::OrderedStoreInput => InputHint::OrderedStoreInput.to_string(),
-        Screen::OrderedEntries if app.ordered_entries_search_active => {
+        Screen::OrderedEntries if app.ordered_entries.search_active => {
             InputHint::SearchById.to_string()
         }
-        Screen::OrderedEntries if app.ordered_create_choosing => {
+        Screen::OrderedEntries if app.ordered_entries.create_choosing => {
             InputHint::CreateChoosing.to_string()
         }
-        Screen::OrderedEntries if app.ordered_create_active => {
+        Screen::OrderedEntries if app.ordered_entries.create_active => {
             InputHint::OrderedCreateActive.to_string()
         }
         Screen::OrderedEntries => {

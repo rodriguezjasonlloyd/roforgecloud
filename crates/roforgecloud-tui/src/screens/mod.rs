@@ -1,6 +1,7 @@
 pub(crate) mod memory_store_input;
 pub(crate) mod menu;
 pub(crate) mod messaging;
+pub(crate) mod ordered_entries;
 pub(crate) mod ordered_store_input;
 pub(crate) mod ordered_value;
 pub(crate) mod stores;
@@ -94,9 +95,9 @@ pub(crate) const SCREENS: [ScreenDef; 13] = [
     // Screen::OrderedEntries (9)
     ScreenDef {
         scope: Some(Scope::OrderedEntries),
-        handle_key: crate::update::handle_ordered_entries_key,
-        draw: crate::ui::draw_ordered_entries,
-        bind_keys: None,
+        handle_key: ordered_entries::handle_key,
+        draw: ordered_entries::draw,
+        bind_keys: Some(ordered_entries::bind_keys),
     },
     // Screen::OrderedValue (10)
     ScreenDef {

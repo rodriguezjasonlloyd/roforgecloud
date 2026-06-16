@@ -391,9 +391,9 @@ where
         return Ok(());
     };
 
-    app.ordered_create_id.set(id);
-    app.ordered_create_value.set(value.to_string());
-    app.ordered_create_active = false;
+    app.ordered_entries.create_id.set(id);
+    app.ordered_entries.create_value.set(value.to_string());
+    app.ordered_entries.create_active = false;
 
     app.loading = true;
     terminal.draw(|frame| ui::draw(frame, app))?;

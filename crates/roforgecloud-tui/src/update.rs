@@ -603,91 +603,7 @@ pub(crate) fn build_keymap() -> Keymap<KeyEvent, Scope, Act, Category> {
     );
 
     // OrderedEntries
-    bind(
-        &mut keymap,
-        KeyCode::Char('n'),
-        Act { desc: "next page", handler: |_| Some(Action::LoadNextOrderedEntriesPage) },
-        Scope::OrderedEntries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('p'),
-        Act { desc: "prev page", handler: |_| Some(Action::LoadPrevOrderedEntriesPage) },
-        Scope::OrderedEntries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('r'),
-        Act { desc: "refresh", handler: |_| Some(Action::RefreshOrderedEntries) },
-        Scope::OrderedEntries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('/'),
-        Act {
-            desc: "search",
-            handler: |app| {
-                app.ordered_entries_search_active = true;
-                app.status = "loading all entries for search...".to_string();
-                Some(Action::LoadAllOrderedEntriesForSearch)
-            },
-        },
-        Scope::OrderedEntries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('c'),
-        Act {
-            desc: "create",
-            handler: |app| {
-                app.ordered_create_choosing = true;
-                None
-            },
-        },
-        Scope::OrderedEntries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char(' '),
-        Act {
-            desc: "select",
-            handler: |app| {
-                app.toggle_ordered_entry_mark();
-                None
-            },
-        },
-        Scope::OrderedEntries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('a'),
-        Act {
-            desc: "select all",
-            handler: |app| {
-                app.toggle_select_all_ordered_visible();
-                None
-            },
-        },
-        Scope::OrderedEntries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('d'),
-        Act { desc: "delete", handler: ordered_entries_delete },
-        Scope::OrderedEntries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Enter,
-        Act { desc: "view", handler: ordered_entries_view },
-        Scope::OrderedEntries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('l'),
-        Act { desc: "view", handler: ordered_entries_view },
-        Scope::OrderedEntries,
-    );
+    crate::screens::ordered_entries::bind_keys(&mut keymap);
 
     // OrderedValue
     crate::screens::ordered_value::bind_keys(&mut keymap);
@@ -880,26 +796,6 @@ fn tree_exit(app: &mut App) -> Option<Action> {
         app.exit_tree_mode();
     }
     None
-}
-
-fn ordered_entries_delete(app: &mut App) -> Option<Action> {
-    if !app.ordered_entries_marked.is_empty() {
-        app.arm_confirm(PendingConfirm::BulkDeleteOrderedEntries);
-        return None;
-    }
-    if app.visible_ordered_entry_indices().is_empty() {
-        return None;
-    }
-    app.arm_confirm(PendingConfirm::DeleteOrderedEntry);
-    None
-}
-
-fn ordered_entries_view(app: &mut App) -> Option<Action> {
-    if app.visible_ordered_entry_indices().is_empty() {
-        return None;
-    }
-    app.screen = Screen::OrderedValue;
-    Some(Action::LoadOrderedValue)
 }
 
 fn memory_entries_delete(app: &mut App) -> Option<Action> {
@@ -1309,100 +1205,8 @@ pub(crate) fn is_numeric_input_char(c: char) -> bool {
     c.is_ascii_digit() || c == '.' || c == '-'
 }
 
-fn handle_ordered_create_key(app: &mut App, code: KeyCode) -> Option<Action> {
-    match code {
-        KeyCode::Tab | KeyCode::BackTab => {
-            app.ordered_create_field = match app.ordered_create_field {
-                OrderedCreateField::Id => OrderedCreateField::Value,
-                OrderedCreateField::Value => OrderedCreateField::Id,
-            };
-            None
-        }
-        KeyCode::Enter => Some(Action::CreateOrderedEntry),
-        KeyCode::Esc => {
-            app.ordered_create_active = false;
-            app.status.clear();
-            None
-        }
-        _ => {
-            match app.ordered_create_field {
-                OrderedCreateField::Id => {
-                    handle_text_field_key(&mut app.ordered_create_id, code, |_| true)
-                }
-                OrderedCreateField::Value => handle_text_field_key(
-                    &mut app.ordered_create_value,
-                    code,
-                    is_numeric_input_char,
-                ),
-            };
-            None
-        }
-    }
-}
-
-pub(crate) fn handle_ordered_entries_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> Option<Action> {
-    if app.ordered_create_active {
-        return handle_ordered_create_key(app, code);
-    }
-
-    if app.ordered_create_choosing {
-        app.ordered_create_choosing = false;
-        return match code {
-            KeyCode::Char('n') => {
-                app.ordered_create_id.clear();
-                app.ordered_create_value.clear();
-                app.ordered_create_field = OrderedCreateField::Id;
-                app.ordered_create_active = true;
-                None
-            }
-            KeyCode::Char('e') => Some(Action::CreateOrderedEntryExternal),
-            _ => None,
-        };
-    }
-
-    if app.ordered_entries_search_active {
-        return match code {
-            KeyCode::Enter | KeyCode::Esc => {
-                app.ordered_entries_search_active = false;
-                app.ordered_entries_search.clear();
-                app.status.clear();
-                Some(Action::RefreshOrderedEntries)
-            }
-            _ => {
-                if handle_text_field_key(&mut app.ordered_entries_search, code, |_| true) {
-                    app.ordered_entries_selected = 0;
-                }
-                None
-            }
-        };
-    }
-
-    if let Some(result) = handle_pending_confirm(app, code) {
-        return result;
-    }
-
-    let visible = app.visible_ordered_entry_indices().len();
-
-    if let Some(result) = list_nav_key(code, &mut app.ordered_entries_selected, visible) {
-        return result;
-    }
-    if let Some(result) = quit_key(code, app) {
-        return result;
-    }
-
-    if matches!(code, KeyCode::Esc | KeyCode::Backspace | KeyCode::Char('h')) {
-        if !app.ordered_entries_search.value.is_empty() {
-            app.ordered_entries_search.clear();
-            app.ordered_entries_selected = 0;
-            app.status.clear();
-            return None;
-        }
-        app.screen = Screen::OrderedStoreInput;
-        app.status.clear();
-        return None;
-    }
-
-    dispatch(app, Scope::OrderedEntries, code, KeyModifiers::empty())
+pub(crate) fn handle_ordered_entries_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> Option<Action> {
+    crate::screens::ordered_entries::handle_key(app, code, mods)
 }
 
 pub(crate) fn handle_ordered_value_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> Option<Action> {

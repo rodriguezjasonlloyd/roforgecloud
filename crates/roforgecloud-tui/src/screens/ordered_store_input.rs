@@ -59,7 +59,7 @@ pub(crate) fn handle_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> O
             if app.ordered_store_input.scope.value.is_empty() {
                 app.ordered_store_input.scope.set("global");
             }
-            app.ordered_entries_next_page_token = None;
+            app.ordered_entries.next_page_token = None;
             app.screen = Screen::OrderedEntries;
             Some(Action::LoadOrderedEntries)
         }
