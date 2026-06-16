@@ -392,9 +392,9 @@ pub(crate) fn build_keymap() -> Keymap<KeyEvent, Scope, Act, Category> {
                 if app.value_source != ValueSource::MemoryStoreSortedMap {
                     return None;
                 }
-                app.memory_ttl_edit
+                app.memory_entries.ttl_edit
                     .set(app.memory_item_ttl_seconds.to_string());
-                app.memory_ttl_editing = true;
+                app.memory_entries.ttl_editing = true;
                 None
             },
         },
@@ -609,107 +609,7 @@ pub(crate) fn build_keymap() -> Keymap<KeyEvent, Scope, Act, Category> {
     crate::screens::ordered_value::bind_keys(&mut keymap);
 
     // MemoryEntries
-    bind(
-        &mut keymap,
-        KeyCode::Char('n'),
-        Act { desc: "next page", handler: |_| Some(Action::LoadNextMemoryItemsPage) },
-        Scope::MemoryEntries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('p'),
-        Act { desc: "prev page", handler: |_| Some(Action::LoadPrevMemoryItemsPage) },
-        Scope::MemoryEntries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('r'),
-        Act { desc: "refresh", handler: |_| Some(Action::RefreshMemoryItems) },
-        Scope::MemoryEntries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('/'),
-        Act {
-            desc: "search",
-            handler: |app| {
-                app.memory_items_search_active = true;
-                app.status = "loading all items for search...".to_string();
-                Some(Action::LoadAllMemoryItemsForSearch)
-            },
-        },
-        Scope::MemoryEntries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('c'),
-        Act {
-            desc: "create",
-            handler: |app| {
-                app.memory_create_choosing = true;
-                None
-            },
-        },
-        Scope::MemoryEntries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char(' '),
-        Act {
-            desc: "select",
-            handler: |app| {
-                app.toggle_memory_item_mark();
-                None
-            },
-        },
-        Scope::MemoryEntries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('a'),
-        Act {
-            desc: "select all",
-            handler: |app| {
-                app.toggle_select_all_memory_visible();
-                None
-            },
-        },
-        Scope::MemoryEntries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('t'),
-        Act {
-            desc: "edit ttl",
-            handler: |app| {
-                if app.visible_memory_item_indices().is_empty() {
-                    return None;
-                }
-                app.memory_ttl_edit.set("3600");
-                app.memory_ttl_editing = true;
-                None
-            },
-        },
-        Scope::MemoryEntries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('d'),
-        Act { desc: "delete", handler: memory_entries_delete },
-        Scope::MemoryEntries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Enter,
-        Act { desc: "view", handler: memory_entries_view },
-        Scope::MemoryEntries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('l'),
-        Act { desc: "view", handler: memory_entries_view },
-        Scope::MemoryEntries,
-    );
+    crate::screens::memory_entries::bind_keys(&mut keymap);
 
     keymap
 }
@@ -796,25 +696,6 @@ fn tree_exit(app: &mut App) -> Option<Action> {
         app.exit_tree_mode();
     }
     None
-}
-
-fn memory_entries_delete(app: &mut App) -> Option<Action> {
-    if !app.memory_items_marked.is_empty() {
-        app.arm_confirm(PendingConfirm::BulkDeleteMemoryItems);
-        return None;
-    }
-    if app.visible_memory_item_indices().is_empty() {
-        return None;
-    }
-    app.arm_confirm(PendingConfirm::DeleteMemoryItem);
-    None
-}
-
-fn memory_entries_view(app: &mut App) -> Option<Action> {
-    if app.visible_memory_item_indices().is_empty() {
-        return None;
-    }
-    Some(Action::LoadMemoryValue)
 }
 
 pub(crate) fn enter_service(app: &mut App) -> Option<Action> {
@@ -1165,16 +1046,16 @@ pub(crate) fn handle_value_key(app: &mut App, code: KeyCode, modifiers: KeyModif
         return handle_tree_key(app, code, modifiers);
     }
 
-    if app.memory_ttl_editing {
+    if app.memory_entries.ttl_editing {
         return match code {
             KeyCode::Enter => Some(Action::SaveMemoryTtl),
             KeyCode::Esc => {
-                app.memory_ttl_editing = false;
+                app.memory_entries.ttl_editing = false;
                 app.status.clear();
                 None
             }
             _ => {
-                handle_text_field_key(&mut app.memory_ttl_edit, code, |c| c.is_ascii_digit());
+                handle_text_field_key(&mut app.memory_entries.ttl_edit, code, |c| c.is_ascii_digit());
                 None
             }
         };
@@ -1213,7 +1094,7 @@ pub(crate) fn handle_ordered_value_key(app: &mut App, code: KeyCode, mods: KeyMo
     crate::screens::ordered_value::handle_key(app, code, mods)
 }
 
-fn handle_tree_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
+pub(crate) fn handle_tree_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
     let editor = app.tree_editor.as_mut().unwrap();
     if editor.editing_key() {
         match code {
@@ -1284,7 +1165,7 @@ const MEMORY_CREATE_KEYS: &[KeyAction] = &[
     KeyAction { hint: |_| Some(HintEntry::new("enter", "create")) },
     KeyAction {
         hint: |app| {
-            (app.memory_create_field == MemoryCreateField::Value)
+            (app.memory_entries.create_field == MemoryCreateField::Value)
                 .then_some(HintEntry::new("ctrl+t", "tree edit value"))
         },
     },
@@ -1300,136 +1181,10 @@ pub(crate) fn memory_create_hints(app: &App) -> String {
     )
 }
 
-fn handle_memory_create_key(
-    app: &mut App,
-    code: KeyCode,
-    modifiers: KeyModifiers,
-) -> Option<Action> {
-    if app.memory_create_field == MemoryCreateField::Value
-        && code == KeyCode::Char('t')
-        && modifiers.contains(KeyModifiers::CONTROL)
-    {
-        app.enter_tree_mode_for(TreeTarget::MemoryCreate);
-        return None;
-    }
-
-    match code {
-        KeyCode::Tab | KeyCode::BackTab => {
-            app.memory_create_field = match app.memory_create_field {
-                MemoryCreateField::Id => MemoryCreateField::Value,
-                MemoryCreateField::Value => MemoryCreateField::Ttl,
-                MemoryCreateField::Ttl => MemoryCreateField::Id,
-            };
-            None
-        }
-        KeyCode::Enter => Some(Action::CreateMemoryItem),
-        KeyCode::Esc => {
-            app.memory_create_active = false;
-            app.status.clear();
-            None
-        }
-        _ => {
-            match app.memory_create_field {
-                MemoryCreateField::Id => {
-                    handle_text_field_key(&mut app.memory_create_id, code, |_| true)
-                }
-                MemoryCreateField::Value => {
-                    handle_text_field_key(&mut app.memory_create_value, code, |_| true)
-                }
-                MemoryCreateField::Ttl => {
-                    handle_text_field_key(&mut app.memory_create_ttl, code, |c| c.is_ascii_digit())
-                }
-            };
-            None
-        }
-    }
-}
-
 pub(crate) fn handle_memory_entries_key(
     app: &mut App,
     code: KeyCode,
     modifiers: KeyModifiers,
 ) -> Option<Action> {
-    if app.tree_editor.is_some() {
-        return handle_tree_key(app, code, modifiers);
-    }
-
-    if app.memory_create_active {
-        return handle_memory_create_key(app, code, modifiers);
-    }
-
-    if app.memory_create_choosing {
-        app.memory_create_choosing = false;
-        return match code {
-            KeyCode::Char('n') => {
-                app.memory_create_id.clear();
-                app.memory_create_value.clear();
-                app.memory_create_ttl.set("3600");
-                app.memory_create_field = MemoryCreateField::Id;
-                app.memory_create_active = true;
-                None
-            }
-            KeyCode::Char('e') => Some(Action::CreateMemoryItemExternal),
-            _ => None,
-        };
-    }
-
-    if app.memory_ttl_editing {
-        return match code {
-            KeyCode::Enter => Some(Action::SaveMemoryTtl),
-            KeyCode::Esc => {
-                app.memory_ttl_editing = false;
-                app.status.clear();
-                None
-            }
-            _ => {
-                handle_text_field_key(&mut app.memory_ttl_edit, code, |c| c.is_ascii_digit());
-                None
-            }
-        };
-    }
-
-    if app.memory_items_search_active {
-        return match code {
-            KeyCode::Enter | KeyCode::Esc => {
-                app.memory_items_search_active = false;
-                app.memory_items_search.clear();
-                app.status.clear();
-                Some(Action::RefreshMemoryItems)
-            }
-            _ => {
-                if handle_text_field_key(&mut app.memory_items_search, code, |_| true) {
-                    app.memory_items_selected = 0;
-                }
-                None
-            }
-        };
-    }
-
-    if let Some(result) = handle_pending_confirm(app, code) {
-        return result;
-    }
-
-    let visible = app.visible_memory_item_indices().len();
-
-    if let Some(result) = list_nav_key(code, &mut app.memory_items_selected, visible) {
-        return result;
-    }
-    if let Some(result) = quit_key(code, app) {
-        return result;
-    }
-
-    if matches!(code, KeyCode::Esc | KeyCode::Backspace | KeyCode::Char('h')) {
-        if !app.memory_items_search.value.is_empty() {
-            app.memory_items_search.clear();
-            app.memory_items_selected = 0;
-            app.status.clear();
-            return None;
-        }
-        app.screen = Screen::MemoryStoreInput;
-        app.status.clear();
-        return None;
-    }
-
-    dispatch(app, Scope::MemoryEntries, code, modifiers)
+    crate::screens::memory_entries::handle_key(app, code, modifiers)
 }

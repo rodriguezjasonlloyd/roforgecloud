@@ -67,128 +67,7 @@ pub(crate) fn draw_memory_store_input(frame: &mut Frame, app: &App, area: Rect) 
 }
 
 pub(crate) fn draw_memory_entries(frame: &mut Frame, app: &App, area: Rect) {
-    let visible = app.visible_memory_item_indices();
-
-    let items: Vec<ListItem> = visible
-        .iter()
-        .map(|&i| {
-            let item = &app.memory_items[i];
-            let mut spans = Vec::new();
-            if !app.memory_items_marked.is_empty() {
-                let marker = if app.memory_items_marked.contains(&i) {
-                    "[x] "
-                } else {
-                    "[ ] "
-                };
-                spans.push(Span::raw(marker));
-            }
-            let preview = serde_json::to_string(&item.value).unwrap_or_default();
-            let expire = item.expire_time.as_deref().unwrap_or("—");
-            spans.push(Span::raw(format!(
-                "{}  =  {preview}  (expires: {expire})",
-                item.id
-            )));
-            ListItem::new(Line::from(spans))
-        })
-        .collect();
-
-    let store_label = match app.universe_names.get(&app.universe_id) {
-        Some(name) => format!(
-            "{} (universe {} ({name}))",
-            app.memory_store_input.id, app.universe_id
-        ),
-        None => app.memory_store_input.id.clone(),
-    };
-    let title = if app.memory_items_search.value.is_empty() {
-        if app.memory_items_marked.is_empty() {
-            store_label
-        } else {
-            format!("{store_label} ({} selected)", app.memory_items_marked.len())
-        }
-    } else if app.memory_items_marked.is_empty() {
-        format!("{store_label} (search: {})", app.memory_items_search.value)
-    } else {
-        format!(
-            "{store_label} (search: {}, {} selected)",
-            app.memory_items_search.value,
-            app.memory_items_marked.len()
-        )
-    };
-
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title(title))
-        .highlight_style(HIGHLIGHT_STYLE);
-
-    let mut state = ListState::default();
-    if !visible.is_empty() {
-        state.select(Some(app.memory_items_selected));
-    }
-    frame.render_stateful_widget(list, area, &mut state);
-
-    if app.memory_create_active {
-        draw_memory_create_popup(frame, app, area);
-    }
-
-    if app.memory_ttl_editing {
-        draw_memory_ttl_popup(frame, app, area);
-    }
-}
-
-fn draw_memory_create_popup(frame: &mut Frame, app: &App, area: Rect) {
-    if app.tree_editor.is_some() && app.tree_target == TreeTarget::MemoryCreate {
-        let popup = centered_rect(80, 80, area);
-        frame.render_widget(Clear, popup);
-        draw_tree(frame, app, popup);
-        return;
-    }
-
-    let id_active = app.memory_create_field == MemoryCreateField::Id;
-    let value_active = app.memory_create_field == MemoryCreateField::Value;
-    let ttl_active = app.memory_create_field == MemoryCreateField::Ttl;
-    let max_lines = 5;
-
-    let popup = centered_rect_lines(50, max_lines + 2 + 3 + 3 + 2, area);
-    frame.render_widget(Clear, popup);
-    let block = Block::default().borders(Borders::ALL).title("Create Item");
-    let inner = block.inner(popup);
-    frame.render_widget(block, popup);
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(0),
-            Constraint::Length(3),
-        ])
-        .split(inner);
-
-    field_box(frame, rows[0], "Id", &app.memory_create_id, id_active);
-    field_paragraph_box(
-        frame,
-        rows[1],
-        "Value (JSON)",
-        &app.memory_create_value,
-        value_active,
-    );
-    field_box(
-        frame,
-        rows[2],
-        "TTL (seconds)",
-        &app.memory_create_ttl,
-        ttl_active,
-    );
-}
-
-fn draw_memory_ttl_popup(frame: &mut Frame, app: &App, area: Rect) {
-    let popup = centered_rect_lines(40, 3, area);
-    frame.render_widget(Clear, popup);
-    field_box(
-        frame,
-        popup,
-        "Edit TTL (seconds)",
-        &app.memory_ttl_edit,
-        true,
-    );
+    crate::screens::memory_entries::draw(frame, app, area);
 }
 
 pub(crate) fn draw_stores(frame: &mut Frame, app: &App, area: Rect) {
@@ -327,7 +206,7 @@ fn scalar_style(preview: &str) -> Style {
     }
 }
 
-fn draw_tree(frame: &mut Frame, app: &App, area: Rect) {
+pub(crate) fn draw_tree(frame: &mut Frame, app: &App, area: Rect) {
     let Some(editor) = &app.tree_editor else {
         return;
     };
@@ -492,7 +371,7 @@ fn screen_binds(app: &App) -> String {
         Screen::Value if app.tree_editor.is_some() => {
             join_hints(&[MOVE, &hint_bar_entries(app, Scope::Tree)])
         }
-        Screen::Value if app.memory_ttl_editing => InputHint::TtlEdit.to_string(),
+        Screen::Value if app.memory_entries.ttl_editing => InputHint::TtlEdit.to_string(),
         Screen::Value => join_hints(&[SCROLL, &hint_bar_entries(app, Scope::Value), BACK_QUIT]),
         Screen::Messaging => InputHint::Messaging.to_string(),
         Screen::OrderedStoreInput => InputHint::OrderedStoreInput.to_string(),
@@ -516,7 +395,7 @@ fn screen_binds(app: &App) -> String {
             join_hints(&[&hint_bar_entries(app, Scope::OrderedValue), BACK_QUIT])
         }
         Screen::MemoryStoreInput => InputHint::MemoryStoreInput.to_string(),
-        Screen::MemoryStoreEntries if app.memory_items_search_active => {
+        Screen::MemoryStoreEntries if app.memory_entries.search_active => {
             InputHint::SearchById.to_string()
         }
         Screen::MemoryStoreEntries
@@ -527,13 +406,13 @@ fn screen_binds(app: &App) -> String {
         Screen::MemoryStoreEntries if app.tree_editor.is_some() => {
             join_hints(&[MOVE, &hint_bar_entries(app, Scope::Tree)])
         }
-        Screen::MemoryStoreEntries if app.memory_create_choosing => {
+        Screen::MemoryStoreEntries if app.memory_entries.create_choosing => {
             InputHint::CreateChoosing.to_string()
         }
-        Screen::MemoryStoreEntries if app.memory_create_active => {
+        Screen::MemoryStoreEntries if app.memory_entries.create_active => {
             crate::update::memory_create_hints(app)
         }
-        Screen::MemoryStoreEntries if app.memory_ttl_editing => InputHint::TtlEdit.to_string(),
+        Screen::MemoryStoreEntries if app.memory_entries.ttl_editing => InputHint::TtlEdit.to_string(),
         Screen::MemoryStoreEntries => {
             join_hints(&[MOVE, &hint_bar_entries(app, Scope::MemoryEntries), BACK_QUIT])
         }
@@ -706,7 +585,7 @@ fn field_paragraph(
     (lines, cursor_pos)
 }
 
-fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
+pub(crate) fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
     let vertical = Layout::default()
         .direction(Direction::Vertical)
         .constraints([

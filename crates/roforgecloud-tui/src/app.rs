@@ -1,7 +1,6 @@
 use roforgecloud_core::auth;
 use roforgecloud_core::oauth::{self, OAuthClient};
 use roforgecloud_core::opencloud::datastore::DataStoreEntryInfo;
-use roforgecloud_core::opencloud::memory_store::SortedMapItem;
 use roforgecloud_core::opencloud::{ListQuery, OpenCloudClient};
 
 use crate::tree_editor::TreeEditor;
@@ -306,23 +305,7 @@ pub struct App {
 
     pub memory_store_input: crate::screens::memory_store_input::State,
 
-    pub memory_items: Vec<SortedMapItem>,
-    pub memory_items_selected: usize,
-    pub memory_items_next_page_token: Option<String>,
-    pub memory_items_page_tokens: Vec<Option<String>>,
-    pub memory_items_marked: std::collections::HashSet<usize>,
-    pub memory_items_search: TextField,
-    pub memory_items_search_active: bool,
-
-    pub memory_create_id: TextField,
-    pub memory_create_value: TextField,
-    pub memory_create_ttl: TextField,
-    pub memory_create_field: MemoryCreateField,
-    pub memory_create_active: bool,
-    pub memory_create_choosing: bool,
-
-    pub memory_ttl_edit: TextField,
-    pub memory_ttl_editing: bool,
+    pub memory_entries: crate::screens::memory_entries::State,
 
     pub memory_item_editing_id: String,
     pub memory_item_ttl_seconds: u64,
@@ -393,24 +376,7 @@ impl App {
             ordered_value: crate::screens::ordered_value::State::new(),
             value_source: ValueSource::DataStore,
             memory_store_input: crate::screens::memory_store_input::State::new(),
-            memory_items: Vec::new(),
-            memory_items_selected: 0,
-            memory_items_next_page_token: None,
-            memory_items_page_tokens: vec![None],
-            memory_items_marked: std::collections::HashSet::new(),
-            memory_items_search: TextField::default(),
-            memory_items_search_active: false,
-            memory_create_id: TextField::default(),
-            memory_create_value: TextField::default(),
-            memory_create_ttl: TextField {
-                value: "3600".to_string(),
-                cursor: "3600".len(),
-            },
-            memory_create_field: MemoryCreateField::Id,
-            memory_create_active: false,
-            memory_create_choosing: false,
-            memory_ttl_edit: TextField::default(),
-            memory_ttl_editing: false,
+            memory_entries: crate::screens::memory_entries::State::new(),
             memory_item_editing_id: String::new(),
             memory_item_ttl_seconds: 3600,
             which_key: crate::update::Keys::new(
@@ -863,7 +829,7 @@ impl App {
         !self.stores.marked.is_empty()
             || !self.entries_marked.is_empty()
             || !self.ordered_entries.marked.is_empty()
-            || !self.memory_items_marked.is_empty()
+            || !self.memory_entries.marked.is_empty()
     }
 
     pub fn text_input_active(&self) -> bool {
@@ -881,7 +847,7 @@ impl App {
             }
             Screen::Value => {
                 self.tree_editor.as_ref().is_some_and(|t| t.is_editing())
-                    || self.memory_ttl_editing
+                    || self.memory_entries.ttl_editing
             }
             Screen::OrderedEntries => {
                 self.ordered_entries.search_active
@@ -890,9 +856,9 @@ impl App {
             }
             Screen::OrderedValue => self.ordered_value.editing || self.ordered_value.increment_editing,
             Screen::MemoryStoreEntries => {
-                self.memory_items_search_active
-                    || self.memory_create_active
-                    || self.memory_create_choosing
+                self.memory_entries.search_active
+                    || self.memory_entries.create_active
+                    || self.memory_entries.create_choosing
             }
             _ => false,
         }
@@ -1000,7 +966,7 @@ impl App {
         let source = match target {
             TreeTarget::Value => self.value_text.clone(),
             TreeTarget::EntriesCreate => self.entries_create_value.value.clone(),
-            TreeTarget::MemoryCreate => self.memory_create_value.value.clone(),
+            TreeTarget::MemoryCreate => self.memory_entries.create_value.value.clone(),
         };
         let source = source.trim();
         let source = if source.is_empty() { "{}" } else { source };
@@ -1055,7 +1021,7 @@ impl App {
                 self.exit_tree_mode();
             }
             TreeTarget::MemoryCreate => {
-                self.memory_create_value.set(json);
+                self.memory_entries.create_value.set(json);
                 self.exit_tree_mode();
             }
         }
@@ -1134,7 +1100,7 @@ impl App {
                 self.value_text = serde_json::to_string_pretty(&item.value).unwrap_or_default();
                 self.value_revision = item.etag.clone();
                 self.value_scroll = 0;
-                if let Some(cached) = self.memory_items.iter_mut().find(|i| i.id == item.id) {
+                if let Some(cached) = self.memory_entries.items.iter_mut().find(|i| i.id == item.id) {
                     cached.value = item.value;
                     cached.etag = item.etag;
                     cached.expire_time = item.expire_time;
@@ -1641,28 +1607,28 @@ impl App {
     }
 
     pub async fn load_memory_items(&mut self) {
-        self.memory_items_page_tokens = vec![None];
+        self.memory_entries.page_tokens = vec![None];
         self.load_memory_items_page().await;
     }
 
     pub async fn load_next_memory_items_page(&mut self) {
-        let Some(token) = self.memory_items_next_page_token.clone() else {
+        let Some(token) = self.memory_entries.next_page_token.clone() else {
             return;
         };
-        self.memory_items_page_tokens.push(Some(token));
+        self.memory_entries.page_tokens.push(Some(token));
         self.load_memory_items_page().await;
     }
 
     pub async fn load_prev_memory_items_page(&mut self) {
-        if self.memory_items_page_tokens.len() <= 1 {
+        if self.memory_entries.page_tokens.len() <= 1 {
             return;
         }
-        self.memory_items_page_tokens.pop();
+        self.memory_entries.page_tokens.pop();
         self.load_memory_items_page().await;
     }
 
     pub async fn load_memory_items_page(&mut self) {
-        let page_token = self.memory_items_page_tokens.last().cloned().flatten();
+        let page_token = self.memory_entries.page_tokens.last().cloned().flatten();
 
         self.status = "loading items...".to_string();
         match self
@@ -1679,13 +1645,13 @@ impl App {
             .await
         {
             Ok(result) => {
-                self.memory_items = result.items;
-                self.memory_items_selected = 0;
-                self.memory_items_marked.clear();
-                self.memory_items_next_page_token =
+                self.memory_entries.items = result.items;
+                self.memory_entries.selected = 0;
+                self.memory_entries.marked.clear();
+                self.memory_entries.next_page_token =
                     result.next_page_token.filter(|t| !t.is_empty());
-                let page = self.memory_items_page_tokens.len();
-                self.status = format!("{} items (page {page})", self.memory_items.len());
+                let page = self.memory_entries.page_tokens.len();
+                self.status = format!("{} items (page {page})", self.memory_entries.items.len());
             }
             Err(err) => {
                 self.status = self.datastore_error(err);
@@ -1724,61 +1690,26 @@ impl App {
                 }
             }
         }
-        self.memory_items = all;
-        self.memory_items_selected = 0;
-        self.memory_items_marked.clear();
-        self.memory_items_next_page_token = None;
-        self.memory_items_page_tokens = vec![None];
+        self.memory_entries.items = all;
+        self.memory_entries.selected = 0;
+        self.memory_entries.marked.clear();
+        self.memory_entries.next_page_token = None;
+        self.memory_entries.page_tokens = vec![None];
         self.status = format!(
             "{} items (search across whole sorted map)",
-            self.memory_items.len()
+            self.memory_entries.items.len()
         );
     }
 
     pub fn visible_memory_item_indices(&self) -> Vec<usize> {
-        if self.memory_items_search.value.is_empty() {
-            return (0..self.memory_items.len()).collect();
-        }
-
-        let needle = self.memory_items_search.value.to_lowercase();
-        self.memory_items
-            .iter()
-            .enumerate()
-            .filter(|(_, item)| item.id.to_lowercase().contains(&needle))
-            .map(|(i, _)| i)
-            .collect()
-    }
-
-    fn current_memory_item_index(&self) -> Option<usize> {
-        self.visible_memory_item_indices()
-            .get(self.memory_items_selected)
-            .copied()
-    }
-
-    pub fn toggle_memory_item_mark(&mut self) {
-        if let Some(index) = self.current_memory_item_index() {
-            if !self.memory_items_marked.remove(&index) {
-                self.memory_items_marked.insert(index);
-            }
-        }
-    }
-
-    pub fn toggle_select_all_memory_visible(&mut self) {
-        let visible = self.visible_memory_item_indices();
-        if visible.iter().all(|i| self.memory_items_marked.contains(i)) {
-            for i in &visible {
-                self.memory_items_marked.remove(i);
-            }
-        } else {
-            self.memory_items_marked.extend(visible);
-        }
+        self.memory_entries.visible_indices()
     }
 
     pub async fn load_memory_value(&mut self) {
-        let Some(index) = self.current_memory_item_index() else {
+        let Some(index) = self.memory_entries.current_index() else {
             return;
         };
-        let id = self.memory_items[index].id.clone();
+        let id = self.memory_entries.items[index].id.clone();
 
         self.status = "loading value...".to_string();
         match self
@@ -1807,19 +1738,19 @@ impl App {
     }
 
     pub async fn create_memory_item(&mut self) {
-        let id = self.memory_create_id.value.trim();
+        let id = self.memory_entries.create_id.value.trim();
         if id.is_empty() || id.len() > 63 {
             self.status = "item id must be 1-63 characters".to_string();
             return;
         }
-        let value: serde_json::Value = match serde_json::from_str(&self.memory_create_value.value) {
+        let value: serde_json::Value = match serde_json::from_str(&self.memory_entries.create_value.value) {
             Ok(value) => value,
             Err(err) => {
                 self.status = format!("invalid JSON: {err}");
                 return;
             }
         };
-        let ttl: u64 = match self.memory_create_ttl.value.parse() {
+        let ttl: u64 = match self.memory_entries.create_ttl.value.parse() {
             Ok(ttl) => ttl,
             Err(_) => {
                 self.status = "invalid ttl".to_string();
@@ -1840,10 +1771,10 @@ impl App {
             .await
         {
             Ok(_) => {
-                self.memory_create_id.clear();
-                self.memory_create_value.clear();
-                self.memory_create_ttl.set("3600");
-                self.memory_create_active = false;
+                self.memory_entries.create_id.clear();
+                self.memory_entries.create_value.clear();
+                self.memory_entries.create_ttl.set("3600");
+                self.memory_entries.create_active = false;
                 self.status = "created".to_string();
                 self.load_memory_items_page().await;
             }
@@ -1854,10 +1785,10 @@ impl App {
     }
 
     pub async fn delete_memory_item(&mut self) {
-        let Some(index) = self.current_memory_item_index() else {
+        let Some(index) = self.memory_entries.current_index() else {
             return;
         };
-        let id = self.memory_items[index].id.clone();
+        let id = self.memory_entries.items[index].id.clone();
 
         self.status = "deleting...".to_string();
         match self
@@ -1866,10 +1797,10 @@ impl App {
             .await
         {
             Ok(()) => {
-                self.memory_items.remove(index);
+                self.memory_entries.items.remove(index);
                 let visible = self.visible_memory_item_indices().len();
-                if self.memory_items_selected >= visible {
-                    self.memory_items_selected = visible.saturating_sub(1);
+                if self.memory_entries.selected >= visible {
+                    self.memory_entries.selected = visible.saturating_sub(1);
                 }
                 if self.screen == Screen::Value {
                     self.screen = Screen::MemoryStoreEntries;
@@ -1883,7 +1814,7 @@ impl App {
     }
 
     pub async fn bulk_delete_memory_items(&mut self) {
-        let mut indices: Vec<usize> = self.memory_items_marked.iter().copied().collect();
+        let mut indices: Vec<usize> = self.memory_entries.marked.iter().copied().collect();
         indices.sort_unstable();
 
         let total = indices.len();
@@ -1896,7 +1827,7 @@ impl App {
         let mut errors = 0;
 
         for &i in &indices {
-            let id = self.memory_items[i].id.clone();
+            let id = self.memory_entries.items[i].id.clone();
             self.status = format!("deleting {}/{total}...", deleted_indices.len() + errors + 1);
             match self
                 .client
@@ -1909,14 +1840,14 @@ impl App {
         }
 
         for &i in deleted_indices.iter().rev() {
-            self.memory_items.remove(i);
+            self.memory_entries.items.remove(i);
         }
 
-        self.memory_items_marked.clear();
+        self.memory_entries.marked.clear();
 
         let visible = self.visible_memory_item_indices().len();
-        if self.memory_items_selected >= visible {
-            self.memory_items_selected = visible.saturating_sub(1);
+        if self.memory_entries.selected >= visible {
+            self.memory_entries.selected = visible.saturating_sub(1);
         }
 
         self.status = if errors == 0 {
@@ -1927,12 +1858,12 @@ impl App {
     }
 
     pub async fn save_memory_ttl(&mut self) {
-        let Some(index) = self.current_memory_item_index() else {
+        let Some(index) = self.memory_entries.current_index() else {
             return;
         };
-        let item = self.memory_items[index].clone();
+        let item = self.memory_entries.items[index].clone();
 
-        let ttl: u64 = match self.memory_ttl_edit.value.parse() {
+        let ttl: u64 = match self.memory_entries.ttl_edit.value.parse() {
             Ok(ttl) => ttl,
             Err(_) => {
                 self.status = "invalid ttl".to_string();
@@ -1954,9 +1885,9 @@ impl App {
             .await
         {
             Ok(updated) => {
-                self.memory_items[index].etag = updated.etag;
-                self.memory_items[index].expire_time = updated.expire_time;
-                self.memory_ttl_editing = false;
+                self.memory_entries.items[index].etag = updated.etag;
+                self.memory_entries.items[index].expire_time = updated.expire_time;
+                self.memory_entries.ttl_editing = false;
                 self.status = "saved".to_string();
             }
             Err(err) => {

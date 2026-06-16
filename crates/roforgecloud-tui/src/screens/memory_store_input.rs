@@ -41,7 +41,7 @@ pub(crate) fn handle_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> O
                 return None;
             }
             app.memory_store_input.id = app.memory_store_input.input.value.clone();
-            app.memory_items_next_page_token = None;
+            app.memory_entries.next_page_token = None;
             app.screen = Screen::MemoryStoreEntries;
             Some(Action::LoadMemoryItems)
         }

@@ -437,10 +437,10 @@ where
         .unwrap_or(serde_json::Value::Null);
     let ttl = parsed.get("ttl").and_then(|v| v.as_u64()).unwrap_or(3600);
 
-    app.memory_create_id.set(id);
-    app.memory_create_value.set(serde_json::to_string(&value)?);
-    app.memory_create_ttl.set(ttl.to_string());
-    app.memory_create_active = false;
+    app.memory_entries.create_id.set(id);
+    app.memory_entries.create_value.set(serde_json::to_string(&value)?);
+    app.memory_entries.create_ttl.set(ttl.to_string());
+    app.memory_entries.create_active = false;
 
     app.loading = true;
     terminal.draw(|frame| ui::draw(frame, app))?;
