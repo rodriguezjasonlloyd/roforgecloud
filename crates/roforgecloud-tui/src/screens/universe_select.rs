@@ -27,6 +27,7 @@ impl State {
 }
 
 pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
+    update::bind_list_nav(km, Scope::UniverseSelect);
     update::bind(
         km,
         KeyCode::Char('/'),

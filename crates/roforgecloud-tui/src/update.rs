@@ -201,6 +201,13 @@ pub(crate) fn bind(
     keymap.bind(&seq, act, Category::General, scope);
 }
 
+pub(crate) fn bind_list_nav(km: &mut Keymap<KeyEvent, Scope, Act, Category>, scope: Scope) {
+    bind(km, KeyCode::Char('j'), Act { desc: "move down", handler: |_| None }, scope.clone());
+    bind(km, KeyCode::Down,     Act { desc: "move down", handler: |_| None }, scope.clone());
+    bind(km, KeyCode::Char('k'), Act { desc: "move up",  handler: |_| None }, scope.clone());
+    bind(km, KeyCode::Up,        Act { desc: "move up",  handler: |_| None }, scope);
+}
+
 pub(crate) fn dispatch(
     app: &mut App,
     scope: Scope,

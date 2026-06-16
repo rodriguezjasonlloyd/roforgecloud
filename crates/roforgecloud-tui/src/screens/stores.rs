@@ -10,7 +10,7 @@ use ratatui_which_key::Keymap;
 use roforgecloud_core::opencloud::datastore::DataStoreInfo;
 
 use crate::app::{Action, App, EntriesCreateField, PendingConfirm, Screen, TextField, TextFieldExt};
-use crate::update::{Act, Category, Scope, bind, back_key, dispatch, handle_pending_confirm, handle_text_field_key, list_nav_key, quit_key};
+use crate::update::{Act, Category, Scope, bind, bind_list_nav, back_key, dispatch, handle_pending_confirm, handle_text_field_key, list_nav_key, quit_key};
 use crate::ui::{HIGHLIGHT_STYLE, breadcrumb, centered_rect_lines, field_box, universe_label};
 
 pub(crate) struct State {
@@ -53,6 +53,7 @@ impl State {
 }
 
 pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
+    bind_list_nav(km, Scope::Stores);
     bind(km, KeyCode::Char('l'), Act { desc: "open", handler: open }, Scope::Stores);
     bind(
         km,

@@ -10,7 +10,7 @@ use roforgecloud_core::opencloud::ordered_datastore::OrderedDataStoreEntry;
 
 use crate::app::{Action, App, OrderedCreateField, PendingConfirm, Screen, TextField, TextFieldExt};
 use crate::status;
-use crate::update::{self, Act, Category, Scope, bind, dispatch, handle_pending_confirm, handle_text_field_key, list_nav_key, quit_key};
+use crate::update::{self, Act, Category, Scope, bind, bind_list_nav, dispatch, handle_pending_confirm, handle_text_field_key, list_nav_key, quit_key};
 use crate::ui::{HIGHLIGHT_STYLE, breadcrumb, centered_rect_lines, field_box, field_paragraph_box, universe_label};
 
 pub(crate) struct State {
@@ -84,6 +84,7 @@ impl State {
 }
 
 pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
+    bind_list_nav(km, Scope::OrderedEntries);
     bind(km, KeyCode::Char('n'), Act { desc: "next page", handler: |_| Some(Action::LoadNextOrderedEntriesPage) }, Scope::OrderedEntries);
     bind(km, KeyCode::Char('p'), Act { desc: "prev page", handler: |_| Some(Action::LoadPrevOrderedEntriesPage) }, Scope::OrderedEntries);
     bind(km, KeyCode::Char('r'), Act { desc: "refresh", handler: |_| Some(Action::RefreshOrderedEntries) }, Scope::OrderedEntries);
