@@ -5,7 +5,6 @@ use clap::builder::styling::{AnsiColor, Styles};
 use clap::{Parser, Subcommand};
 use colored::Colorize;
 use roforgecloud_core::auth;
-use roforgecloud_core::oauth;
 use roforgecloud_core::opencloud::{Credentials, OpenCloudClient};
 
 use commands::auth::CliLoginPrompt;
@@ -23,35 +22,8 @@ const STYLES: Styles = Styles::styled()
 #[derive(Parser)]
 #[command(name = "roforgecloud", about = "Roblox Open Cloud companion CLI", styles = STYLES)]
 struct Cli {
-    #[arg(long, env = "ROFORGE_API_KEY", hide_env_values = true, global = true)]
-    api_key: Option<String>,
-
-    #[arg(long, env = "ROFORGE_OAUTH_CLIENT_ID", hide_env_values = true, hide_default_value = true, default_value = oauth::DEFAULT_CLIENT_ID, global = true)]
-    client_id: String,
-
-    /// For self-registered OAuth apps; bypasses the relay.
-    #[arg(
-        long,
-        env = "ROFORGE_OAUTH_CLIENT_SECRET",
-        hide_env_values = true,
-        hide_default_value = true,
-        global = true
-    )]
-    client_secret: Option<String>,
-
-    /// Relay holding the client secret. Ignored if --client-secret is set.
-    #[arg(long, env = "ROFORGE_OAUTH_RELAY_URL",hide_env_values = true, hide_default_value = true, default_value = oauth::DEFAULT_RELAY_URL, global = true)]
-    relay_url: String,
-
-    #[arg(
-        long,
-        env = "ROFORGE_OAUTH_REDIRECT_URI",
-        hide_env_values = true,
-        hide_default_value = true,
-        default_value = "http://localhost:8675/callback",
-        global = true
-    )]
-    redirect_uri: String,
+    #[command(flatten)]
+    oauth: auth::OAuthArgs,
 
     #[command(subcommand)]
     command: Command,
@@ -85,22 +57,12 @@ async fn run() -> anyhow::Result<()> {
 
     match cli.command {
         Command::Login => {
-            let oauth = auth::build_oauth_client(
-                cli.client_id,
-                cli.client_secret,
-                &cli.relay_url,
-                &cli.redirect_uri,
-            )?;
-            auth::force_login(&oauth, &cli.redirect_uri, &CliLoginPrompt::default()).await?;
+            let oauth = cli.oauth.build_oauth_client()?;
+            auth::force_login(&oauth, &cli.oauth.redirect_uri, &CliLoginPrompt::default()).await?;
             return Ok(());
         }
         Command::Logout => {
-            let oauth = auth::build_oauth_client(
-                cli.client_id,
-                cli.client_secret,
-                &cli.relay_url,
-                &cli.redirect_uri,
-            )?;
+            let oauth = cli.oauth.build_oauth_client()?;
             auth::logout(&oauth).await?;
             println!("{}", "logged out".green());
             return Ok(());
@@ -109,6 +71,7 @@ async fn run() -> anyhow::Result<()> {
     }
 
     let api_key = cli
+        .oauth
         .api_key
         .ok_or_else(|| anyhow::anyhow!("missing API key: pass --api-key or set ROFORGE_API_KEY"))?;
     let client = OpenCloudClient::new(Credentials::ApiKey(api_key));

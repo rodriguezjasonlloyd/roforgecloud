@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use clap::Args;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
@@ -26,6 +27,51 @@ struct StoredToken {
     access_token: String,
     refresh_token: Option<String>,
     expires_at: Option<u64>,
+}
+
+/// Shared OAuth/API-key CLI args for the `roforgecloud` and `roforgecloud-tui` binaries.
+#[derive(Args, Clone)]
+pub struct OAuthArgs {
+    #[arg(long, env = "ROFORGE_API_KEY", hide_env_values = true, global = true)]
+    pub api_key: Option<String>,
+
+    #[arg(long, env = "ROFORGE_OAUTH_CLIENT_ID", hide_env_values = true, hide_default_value = true, default_value = crate::oauth::DEFAULT_CLIENT_ID, global = true)]
+    pub client_id: String,
+
+    /// For self-registered OAuth apps; bypasses the relay.
+    #[arg(
+        long,
+        env = "ROFORGE_OAUTH_CLIENT_SECRET",
+        hide_env_values = true,
+        hide_default_value = true,
+        global = true
+    )]
+    pub client_secret: Option<String>,
+
+    /// Relay holding the client secret. Ignored if --client-secret is set.
+    #[arg(long, env = "ROFORGE_OAUTH_RELAY_URL", hide_env_values = true, hide_default_value = true, default_value = crate::oauth::DEFAULT_RELAY_URL, global = true)]
+    pub relay_url: String,
+
+    #[arg(
+        long,
+        env = "ROFORGE_OAUTH_REDIRECT_URI",
+        hide_env_values = true,
+        hide_default_value = true,
+        default_value = "http://localhost:8675/callback",
+        global = true
+    )]
+    pub redirect_uri: String,
+}
+
+impl OAuthArgs {
+    pub fn build_oauth_client(&self) -> Result<OAuthClient> {
+        build_oauth_client(
+            self.client_id.clone(),
+            self.client_secret.clone(),
+            &self.relay_url,
+            &self.redirect_uri,
+        )
+    }
 }
 
 pub fn build_oauth_client(

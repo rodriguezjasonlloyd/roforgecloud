@@ -2176,6 +2176,7 @@ dependencies = [
 name = "roforgecloud-core"
 version = "0.4.0"
 dependencies = [
+ "clap",
  "oauth2",
  "open",
  "percent-encoding",
