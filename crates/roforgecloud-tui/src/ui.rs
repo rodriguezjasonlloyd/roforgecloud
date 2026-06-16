@@ -7,6 +7,7 @@ use ratatui::Frame;
 use crate::app::{App, Screen, TextFieldExt, TreeTarget};
 use crate::json_tree;
 use crate::screens;
+use crate::status;
 use crate::update;
 
 pub(crate) const HIGHLIGHT_STYLE: Style = Style::new().bg(Color::Rgb(60, 60, 60)).fg(Color::White);
@@ -153,7 +154,7 @@ fn draw_info(frame: &mut Frame, app: &App, area: Rect, keybinds_height: u16) {
 
 fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     let text = if app.loading {
-        "Loading...".to_string()
+        status::LOADING.to_string()
     } else {
         app.status.clone()
     };

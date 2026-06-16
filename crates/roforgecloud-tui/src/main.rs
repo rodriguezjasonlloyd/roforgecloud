@@ -210,14 +210,14 @@ where
         Ok(status) => status,
         Err(err) => {
             let _ = std::fs::remove_file(&path);
-            app.status = format!("error: failed to launch '{editor}': {err}");
+            app.status = status::editor_launch_error(&editor, err);
             return Ok(None);
         }
     };
 
     if !status.success() {
         let _ = std::fs::remove_file(&path);
-        app.status = format!("error: '{editor}' exited with {status}");
+        app.status = status::editor_exit_error(&editor, status);
         return Ok(None);
     }
 
@@ -239,7 +239,7 @@ where
     };
 
     if edited == initial {
-        app.status = "no changes".to_string();
+        app.status = status::NO_CHANGES.to_string();
         return Ok(());
     }
 
@@ -286,7 +286,7 @@ where
     let edited = edited.trim();
 
     if edited == initial.trim() {
-        app.status = "no changes".to_string();
+        app.status = status::NO_CHANGES.to_string();
         return Ok(());
     }
 
@@ -300,7 +300,7 @@ where
                     .replace_value(Some(key), value);
             }
             _ => {
-                app.status = "error: expected a single-key JSON object".to_string();
+                app.status = status::EXPECT_SINGLE_KEY_OBJ.to_string();
             }
         }
     } else {
@@ -326,7 +326,7 @@ where
     let parsed: serde_json::Value = match serde_json::from_str(&edited) {
         Ok(value) => value,
         Err(err) => {
-            app.status = format!("error: invalid JSON: {err}");
+            app.status = status::editor_json_error(err);
             return Ok(());
         }
     };
@@ -335,7 +335,7 @@ where
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
     else {
-        app.status = "error: \"id\" field must be a non-empty string".to_string();
+        app.status = status::ID_FIELD_REQUIRED.to_string();
         return Ok(());
     };
     let value = parsed
@@ -372,7 +372,7 @@ where
     let parsed: serde_json::Value = match serde_json::from_str(&edited) {
         Ok(value) => value,
         Err(err) => {
-            app.status = format!("error: invalid JSON: {err}");
+            app.status = status::editor_json_error(err);
             return Ok(());
         }
     };
@@ -381,11 +381,11 @@ where
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
     else {
-        app.status = "error: \"id\" field must be a non-empty string".to_string();
+        app.status = status::ID_FIELD_REQUIRED.to_string();
         return Ok(());
     };
     let Some(value) = parsed.get("value").and_then(|v| v.as_f64()) else {
-        app.status = "error: \"value\" field must be a number".to_string();
+        app.status = status::VALUE_FIELD_NUMBER.to_string();
         return Ok(());
     };
 
@@ -418,7 +418,7 @@ where
     let parsed: serde_json::Value = match serde_json::from_str(&edited) {
         Ok(value) => value,
         Err(err) => {
-            app.status = format!("error: invalid JSON: {err}");
+            app.status = status::editor_json_error(err);
             return Ok(());
         }
     };
@@ -427,7 +427,7 @@ where
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
     else {
-        app.status = "error: \"id\" field must be a non-empty string".to_string();
+        app.status = status::ID_FIELD_REQUIRED.to_string();
         return Ok(());
     };
     let value = parsed

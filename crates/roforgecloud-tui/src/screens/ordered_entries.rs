@@ -9,6 +9,7 @@ use ratatui_which_key::Keymap;
 use roforgecloud_core::opencloud::ordered_datastore::OrderedDataStoreEntry;
 
 use crate::app::{Action, App, OrderedCreateField, PendingConfirm, Screen, TextField, TextFieldExt};
+use crate::status;
 use crate::update::{self, Act, Category, Scope, bind, dispatch, handle_pending_confirm, handle_text_field_key, list_nav_key, quit_key};
 use crate::ui::{HIGHLIGHT_STYLE, centered_rect_lines, field_box, field_paragraph_box};
 
@@ -93,7 +94,7 @@ pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
             desc: "search",
             handler: |app| {
                 app.ordered_entries.search_active = true;
-                app.status = "loading all entries for search...".to_string();
+                app.status = status::loading_search("entries");
                 Some(Action::LoadAllOrderedEntriesForSearch)
             },
         },

@@ -28,6 +28,22 @@ pub const TOPIC_EMPTY: &str = "topic cannot be empty";
 pub const NO_UNIVERSES: &str = "no authorized universes found for this token";
 pub const OAUTH_NOT_CONFIGURED: &str =
     "OAuth not configured: set ROFORGE_OAUTH_CLIENT_ID/ROFORGE_OAUTH_CLIENT_SECRET";
+pub const NO_CHANGES: &str = "no changes";
+pub const EXPECT_SINGLE_KEY_OBJ: &str = "error: expected a single-key JSON object";
+pub const ID_FIELD_REQUIRED: &str = "error: \"id\" field must be a non-empty string";
+pub const VALUE_FIELD_NUMBER: &str = "error: \"value\" field must be a number";
+
+pub fn editor_launch_error(editor: &str, err: impl std::fmt::Display) -> String {
+    format!("error: failed to launch '{editor}': {err}")
+}
+
+pub fn editor_exit_error(editor: &str, code: impl std::fmt::Display) -> String {
+    format!("error: '{editor}' exited with {code}")
+}
+
+pub fn editor_json_error(err: impl std::fmt::Display) -> String {
+    format!("error: invalid JSON: {err}")
+}
 
 pub fn api_error(err: impl std::fmt::Display) -> String {
     format!("error: {err}")

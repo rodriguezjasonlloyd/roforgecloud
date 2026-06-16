@@ -10,6 +10,7 @@ use ratatui_which_key::Keymap;
 use roforgecloud_core::opencloud::datastore::DataStoreEntryInfo;
 
 use crate::app::{Action, App, EntriesCreateField, PendingConfirm, Screen, TextField, TextFieldExt, TreeTarget};
+use crate::status;
 use crate::user_lookup;
 use crate::update::{
     Act, Category, Scope, bind, dispatch, handle_pending_confirm, handle_text_field_key,
@@ -141,7 +142,7 @@ pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
             desc: "search",
             handler: |app| {
                 app.entries.search_active = true;
-                app.status = "loading all entries for search...".to_string();
+                app.status = status::loading_search("entries");
                 Some(Action::LoadAllEntriesForSearch)
             },
         },
