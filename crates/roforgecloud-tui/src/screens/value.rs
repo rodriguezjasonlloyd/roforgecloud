@@ -44,19 +44,9 @@ impl State {
 
 pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
     bind(km, KeyCode::Char('r'), Act { desc: "refresh", handler: |_| Some(Action::LoadValue) }, Scope::Value);
-    bind(
-        km,
-        KeyCode::Enter,
-        Act { desc: "tree edit", handler: |app| { app.enter_tree_mode(); None } },
-        Scope::Value,
-    );
-    bind(
-        km,
-        KeyCode::Char('l'),
-        Act { desc: "tree edit", handler: |app| { app.enter_tree_mode(); None } },
-        Scope::Value,
-    );
-    bind(km, KeyCode::Char('e'), Act { desc: "edit in $EDITOR", handler: |_| Some(Action::EditValueExternal) }, Scope::Value);
+    km.describe_group_for_scope("e", "edit", Scope::Value);
+    km.bind("et", Act { desc: "tree edit", handler: |app| { app.enter_tree_mode(); None } }, Category::General, Scope::Value);
+    km.bind("ee", Act { desc: "edit in $EDITOR", handler: |_| Some(Action::EditValueExternal) }, Category::General, Scope::Value);
     bind(
         km,
         KeyCode::Char('d'),
