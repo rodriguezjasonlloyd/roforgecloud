@@ -21,7 +21,6 @@ impl State {
 }
 
 pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
-    update::bind(km, KeyCode::Enter, Act { desc: "select", handler: select }, Scope::UniverseChoice);
     update::bind(km, KeyCode::Char('l'), Act { desc: "select", handler: select }, Scope::UniverseChoice);
 }
 

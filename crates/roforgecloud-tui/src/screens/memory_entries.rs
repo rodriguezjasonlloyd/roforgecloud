@@ -141,7 +141,6 @@ pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
         Scope::MemoryEntries,
     );
     bind(km, KeyCode::Char('d'), Act { desc: "delete", handler: delete }, Scope::MemoryEntries);
-    bind(km, KeyCode::Enter, Act { desc: "view", handler: view }, Scope::MemoryEntries);
     bind(km, KeyCode::Char('l'), Act { desc: "view", handler: view }, Scope::MemoryEntries);
 }
 
@@ -215,7 +214,7 @@ pub(crate) fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) 
         return result;
     }
 
-    if matches!(code, KeyCode::Esc | KeyCode::Backspace | KeyCode::Char('h')) {
+    if matches!(code, KeyCode::Char('h')) {
         if !app.memory_entries.search.get_value().is_empty() {
             app.memory_entries.search.clear();
             app.memory_entries.selected = 0;

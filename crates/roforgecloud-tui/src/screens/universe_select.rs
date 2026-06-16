@@ -39,7 +39,6 @@ pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
         },
         Scope::UniverseSelect,
     );
-    update::bind(km, KeyCode::Enter, Act { desc: "select", handler: choose }, Scope::UniverseSelect);
     update::bind(km, KeyCode::Char('l'), Act { desc: "select", handler: choose }, Scope::UniverseSelect);
 }
 
@@ -68,7 +67,7 @@ pub(crate) fn handle_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> O
         return result;
     }
 
-    if matches!(code, KeyCode::Esc | KeyCode::Backspace | KeyCode::Char('h')) {
+    if matches!(code, KeyCode::Char('h')) {
         if !app.universe_select.search.get_value().is_empty() {
             app.universe_select.search.clear();
             app.universe_select.selected = 0;

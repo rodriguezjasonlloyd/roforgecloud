@@ -53,7 +53,6 @@ impl State {
 }
 
 pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
-    bind(km, KeyCode::Enter, Act { desc: "open", handler: open }, Scope::Stores);
     bind(km, KeyCode::Char('l'), Act { desc: "open", handler: open }, Scope::Stores);
     bind(
         km,

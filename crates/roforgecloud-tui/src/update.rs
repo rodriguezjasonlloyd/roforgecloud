@@ -70,7 +70,7 @@ pub(crate) const SCROLL: &[HintEntry] = &[
 ];
 pub(crate) const QUIT: &[HintEntry] = &[HintEntry::new("q", "quit")];
 pub(crate) const BACK_QUIT: &[HintEntry] =
-    &[HintEntry::new("esc/h", "back"), HintEntry::new("q", "quit")];
+    &[HintEntry::new("h", "back"), HintEntry::new("q", "quit")];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum InputHint {
@@ -578,7 +578,7 @@ pub(crate) fn list_nav_key(
 }
 
 pub(crate) fn quit_key(code: KeyCode, app: &mut App) -> Option<Option<Action>> {
-    if code != KeyCode::Char('q') {
+    if !matches!(code, KeyCode::Char('q') | KeyCode::Esc) {
         return None;
     }
     if app.needs_quit_confirm() {
@@ -636,7 +636,7 @@ pub(crate) fn handle_pending_confirm(app: &mut App, code: KeyCode) -> Option<Opt
 
 pub(crate) fn back_key(code: KeyCode, app: &mut App, screen: Screen) -> Option<Option<Action>> {
     match code {
-        KeyCode::Esc | KeyCode::Backspace | KeyCode::Char('h') => {
+        KeyCode::Char('h') => {
             app.screen = screen;
             app.status.clear();
             Some(None)
