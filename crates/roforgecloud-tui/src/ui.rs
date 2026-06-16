@@ -238,7 +238,13 @@ fn screen_binds(app: &App) -> String {
             join_hints(&[MOVE, &hint_bar_entries(app, Scope::Tree)])
         }
         Screen::Value if app.memory_entries.ttl_editing => InputHint::TtlEdit.to_string(),
-        Screen::Value => join_hints(&[SCROLL, &hint_bar_entries(app, Scope::Value), BACK_QUIT]),
+        Screen::Value => {
+            let scope = match app.value.source {
+                crate::app::ValueSource::DataStore => Scope::DataStoreValue,
+                crate::app::ValueSource::MemoryStoreSortedMap => Scope::MemoryStoreValue,
+            };
+            join_hints(&[SCROLL, &hint_bar_entries(app, scope), BACK_QUIT])
+        }
         Screen::Messaging => InputHint::Messaging.to_string(),
         Screen::OrderedStoreInput => InputHint::OrderedStoreInput.to_string(),
         Screen::OrderedEntries if app.ordered_entries.search_active => {

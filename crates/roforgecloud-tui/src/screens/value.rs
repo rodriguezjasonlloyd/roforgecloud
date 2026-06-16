@@ -43,23 +43,21 @@ impl State {
 }
 
 pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
-    bind_quit(km, Scope::Value);
-    bind(km, KeyCode::Char('h'), Act { desc: "back", handler: |app| {
-        app.screen = match app.value.source {
-            ValueSource::DataStore => Screen::Entries,
-            ValueSource::MemoryStoreSortedMap => Screen::MemoryStoreEntries,
-        };
-        app.status.clear();
-        None
-    }}, Scope::Value);
-    bind(km, KeyCode::Char('r'), Act { desc: "refresh", handler: |_| Some(Action::LoadValue) }, Scope::Value);
-    km.describe_group_for_scope("e", "edit", Scope::Value);
-    km.bind("et", Act { desc: "tree edit", handler: |app| { app.enter_tree_mode(); None } }, Category::General, Scope::Value);
-    km.bind("ee", Act { desc: "edit in $EDITOR", handler: |_| Some(Action::EditValueExternal) }, Category::General, Scope::Value);
-    bind(
-        km,
-        KeyCode::Char('d'),
-        Act {
+    for scope in [Scope::DataStoreValue, Scope::MemoryStoreValue] {
+        bind_quit(km, scope.clone());
+        bind(km, KeyCode::Char('h'), Act { desc: "back", handler: |app| {
+            app.screen = match app.value.source {
+                ValueSource::DataStore => Screen::Entries,
+                ValueSource::MemoryStoreSortedMap => Screen::MemoryStoreEntries,
+            };
+            app.status.clear();
+            None
+        }}, scope.clone());
+        bind(km, KeyCode::Char('r'), Act { desc: "refresh", handler: |_| Some(Action::LoadValue) }, scope.clone());
+        km.describe_group_for_scope("e", "edit", scope.clone());
+        km.bind("et", Act { desc: "tree edit", handler: |app| { app.enter_tree_mode(); None } }, Category::General, scope.clone());
+        km.bind("ee", Act { desc: "edit in $EDITOR", handler: |_| Some(Action::EditValueExternal) }, Category::General, scope.clone());
+        bind(km, KeyCode::Char('d'), Act {
             desc: "delete",
             handler: |app| {
                 let pending = match app.value.source {
@@ -69,48 +67,22 @@ pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
                 app.arm_confirm(pending);
                 None
             },
+        }, scope.clone());
+        bind(km, KeyCode::Up, Act { desc: "scroll up", handler: scroll_up }, scope.clone());
+        bind(km, KeyCode::Char('k'), Act { desc: "scroll up", handler: scroll_up }, scope.clone());
+        bind(km, KeyCode::Down, Act { desc: "scroll down", handler: scroll_down }, scope.clone());
+        bind(km, KeyCode::Char('j'), Act { desc: "scroll down", handler: scroll_down }, scope.clone());
+        bind(km, KeyCode::PageUp, Act { desc: "scroll up x10", handler: |app| { app.value.scroll = app.value.scroll.saturating_sub(10); None } }, scope.clone());
+        bind(km, KeyCode::PageDown, Act { desc: "scroll down x10", handler: |app| { let max = app.value.max_scroll(); app.value.scroll = (app.value.scroll + 10).min(max); None } }, scope.clone());
+    }
+    bind(km, KeyCode::Char('t'), Act {
+        desc: "edit ttl",
+        handler: |app| {
+            app.memory_entries.ttl_edit.set_value(app.memory_item_ttl_seconds.to_string());
+            app.memory_entries.ttl_editing = true;
+            None
         },
-        Scope::Value,
-    );
-    bind(
-        km,
-        KeyCode::Char('t'),
-        Act {
-            desc: "edit ttl",
-            handler: |app| {
-                if app.value.source != ValueSource::MemoryStoreSortedMap {
-                    return None;
-                }
-                app.memory_entries.ttl_edit.set_value(app.memory_item_ttl_seconds.to_string());
-                app.memory_entries.ttl_editing = true;
-                None
-            },
-        },
-        Scope::Value,
-    );
-    bind(km, KeyCode::Up, Act { desc: "scroll up", handler: scroll_up }, Scope::Value);
-    bind(km, KeyCode::Char('k'), Act { desc: "scroll up", handler: scroll_up }, Scope::Value);
-    bind(km, KeyCode::Down, Act { desc: "scroll down", handler: scroll_down }, Scope::Value);
-    bind(km, KeyCode::Char('j'), Act { desc: "scroll down", handler: scroll_down }, Scope::Value);
-    bind(
-        km,
-        KeyCode::PageUp,
-        Act { desc: "scroll up x10", handler: |app| { app.value.scroll = app.value.scroll.saturating_sub(10); None } },
-        Scope::Value,
-    );
-    bind(
-        km,
-        KeyCode::PageDown,
-        Act {
-            desc: "scroll down x10",
-            handler: |app| {
-                let max = app.value.max_scroll();
-                app.value.scroll = (app.value.scroll + 10).min(max);
-                None
-            },
-        },
-        Scope::Value,
-    );
+    }, Scope::MemoryStoreValue);
 }
 
 pub(crate) fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
@@ -136,7 +108,11 @@ pub(crate) fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) 
     if let Some(result) = handle_pending_confirm(app, code) {
         return result;
     }
-    dispatch(app, Scope::Value, code, modifiers)
+    let scope = match app.value.source {
+        ValueSource::DataStore => Scope::DataStoreValue,
+        ValueSource::MemoryStoreSortedMap => Scope::MemoryStoreValue,
+    };
+    dispatch(app, scope, code, modifiers)
 }
 
 pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
