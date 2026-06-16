@@ -58,7 +58,7 @@ impl App {
     }
 
     pub async fn load_all_memory_items_for_search(&mut self) {
-        self.status = "loading all memory items for search...".to_string();
+        self.status = status::loading_search("memory items");
         let mut all = Vec::new();
         let mut page_token: Option<String> = None;
         loop {
@@ -175,7 +175,7 @@ impl App {
     pub async fn create_memory_item(&mut self) {
         let id = self.memory_entries.create_id.get_value().trim();
         if id.is_empty() || id.len() > 63 {
-            self.status = "item id must be 1-63 characters".to_string();
+            self.status = status::ID_TOO_LONG.to_string();
             return;
         }
         let value: serde_json::Value = match serde_json::from_str(self.memory_entries.create_value.get_value()) {

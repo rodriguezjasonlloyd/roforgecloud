@@ -19,7 +19,7 @@ impl App {
 
     pub async fn load_stores(&mut self) {
         self.resolve_current_universe_name();
-        self.status = "loading data stores...".to_string();
+        self.status = status::LOADING.to_string();
         match self
             .client
             .list_data_stores(
@@ -35,7 +35,7 @@ impl App {
                 self.stores.items = result.data_stores;
                 self.stores.selected = 0;
                 self.stores.marked.clear();
-                self.status = format!("{} data stores", self.stores.items.len());
+                self.status = status::store_count(self.stores.items.len());
             }
             Err(err) => {
                 self.status = self.datastore_error(err);
@@ -48,14 +48,14 @@ impl App {
             return;
         };
 
-        self.status = "deleting data store...".to_string();
+        self.status = status::DELETING.to_string();
         match self
             .client
             .delete_data_store(self.universe_id, &store.id)
             .await
         {
             Ok(info) => {
-                self.status = "data store scheduled for deletion".to_string();
+                self.status = status::STORE_DELETED.to_string();
                 self.stores.items[self.stores.selected] = info;
             }
             Err(err) => {
@@ -69,14 +69,14 @@ impl App {
             return;
         };
 
-        self.status = "restoring data store...".to_string();
+        self.status = status::RESTORING.to_string();
         match self
             .client
             .undelete_data_store(self.universe_id, &store.id)
             .await
         {
             Ok(info) => {
-                self.status = "data store restored".to_string();
+                self.status = status::STORE_RESTORED.to_string();
                 self.stores.items[self.stores.selected] = info;
             }
             Err(err) => {
@@ -180,7 +180,7 @@ impl App {
     }
 
     pub async fn load_all_entries_for_search(&mut self) {
-        self.status = "loading all entries for search...".to_string();
+        self.status = status::loading_search("entries");
         let mut all = Vec::new();
         let mut page_token: Option<String> = None;
         loop {
@@ -337,7 +337,7 @@ impl App {
     pub async fn create_entry(&mut self) {
         let id = self.entries.create_id.get_value().trim();
         if id.is_empty() {
-            self.status = "entry id cannot be empty".to_string();
+            self.status = status::ID_EMPTY.to_string();
             return;
         }
         let (scope, key) = match id.split_once('/') {

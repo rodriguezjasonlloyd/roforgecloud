@@ -7,17 +7,15 @@ use crate::status;
 impl App {
     pub async fn login(&mut self) {
         let Some(oauth) = &self.oauth else {
-            self.status =
-                "OAuth not configured: set ROFORGE_OAUTH_CLIENT_ID/ROFORGE_OAUTH_CLIENT_SECRET"
-                    .to_string();
+            self.status = status::OAUTH_NOT_CONFIGURED.to_string();
             return;
         };
 
-        self.status = "opening browser for login...".to_string();
+        self.status = status::OPENING_BROWSER.to_string();
         match auth::force_login(oauth, &self.redirect_uri, &auth::NoopLoginPrompt).await {
             Ok(_) => {
                 self.logged_in = true;
-                self.status = "logged in".to_string();
+                self.status = status::LOGGED_IN.to_string();
             }
             Err(err) => self.status = status::api_error(err),
         }
@@ -25,16 +23,14 @@ impl App {
 
     pub async fn logout(&mut self) {
         let Some(oauth) = &self.oauth else {
-            self.status =
-                "OAuth not configured: set ROFORGE_OAUTH_CLIENT_ID/ROFORGE_OAUTH_CLIENT_SECRET"
-                    .to_string();
+            self.status = status::OAUTH_NOT_CONFIGURED.to_string();
             return;
         };
 
         match auth::logout(oauth).await {
             Ok(()) => {
                 self.logged_in = false;
-                self.status = "logged out".to_string();
+                self.status = status::LOGGED_OUT.to_string();
             }
             Err(err) => self.status = status::api_error(err),
         }
@@ -42,13 +38,11 @@ impl App {
 
     pub async fn load_universes(&mut self) {
         let Some(oauth) = &self.oauth else {
-            self.status =
-                "OAuth not configured: set ROFORGE_OAUTH_CLIENT_ID/ROFORGE_OAUTH_CLIENT_SECRET"
-                    .to_string();
+            self.status = status::OAUTH_NOT_CONFIGURED.to_string();
             return;
         };
 
-        self.status = "fetching authorized universes...".to_string();
+        self.status = status::FETCHING.to_string();
         let result = async {
             let token = auth::access_token(oauth, &self.redirect_uri, &auth::NoopLoginPrompt).await?;
             let resources = oauth.token_resources(&token).await?;
@@ -58,7 +52,7 @@ impl App {
 
         match result {
             Ok(universes) if universes.is_empty() => {
-                self.status = "no authorized universes found for this token".to_string();
+                self.status = status::NO_UNIVERSES.to_string();
             }
             Ok(universes) => {
                 self.available_universes = universes;

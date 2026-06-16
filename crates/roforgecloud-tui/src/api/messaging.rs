@@ -4,7 +4,7 @@ use crate::status;
 impl App {
     pub async fn publish_message(&mut self) {
         if self.messaging.topic.get_value().is_empty() {
-            self.status = "topic cannot be empty".to_string();
+            self.status = status::TOPIC_EMPTY.to_string();
             return;
         }
 
@@ -22,7 +22,7 @@ impl App {
             .await
         {
             Ok(()) => {
-                self.status = format!("published to '{topic}'");
+                self.status = status::published(&topic);
             }
             Err(err) => {
                 self.status = status::api_error(err);

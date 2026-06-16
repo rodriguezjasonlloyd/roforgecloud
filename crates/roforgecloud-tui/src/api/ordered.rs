@@ -58,7 +58,7 @@ impl App {
     }
 
     pub async fn load_all_ordered_entries_for_search(&mut self) {
-        self.status = "loading all ordered entries for search...".to_string();
+        self.status = status::loading_search("ordered entries");
         let mut all = Vec::new();
         let mut page_token: Option<String> = None;
         loop {
@@ -288,7 +288,7 @@ impl App {
     pub async fn create_ordered_entry(&mut self) {
         let id = self.ordered_entries.create_id.get_value().trim();
         if id.is_empty() || id.len() > 63 {
-            self.status = "entry id must be 1-63 characters".to_string();
+            self.status = status::ID_TOO_LONG.to_string();
             return;
         }
         let value: f64 = match self.ordered_entries.create_value.get_value().parse() {
