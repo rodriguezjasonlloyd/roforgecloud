@@ -233,21 +233,11 @@ pub(crate) fn hint_bar_entries(app: &App, scope: Scope) -> Vec<HintEntry> {
 pub(crate) fn build_keymap() -> Keymap<KeyEvent, Scope, Act, Category> {
     let mut keymap = Keymap::new();
 
-    // Menu (bindings delegated to screens::menu)
-    crate::screens::menu::bind_keys(&mut keymap);
-
-    // UniverseChoice / UniverseSelect (delegated to screen modules)
-    crate::screens::universe_choice::bind_keys(&mut keymap);
-    crate::screens::universe_select::bind_keys(&mut keymap);
-
-    // Stores
-    crate::screens::stores::bind_keys(&mut keymap);
-
-    // Entries
-    crate::screens::entries::bind_keys(&mut keymap);
-
-    // Value
-    crate::screens::value::bind_keys(&mut keymap);
+    for screen_def in &crate::screens::SCREENS {
+        if let Some(f) = screen_def.bind_keys {
+            f(&mut keymap);
+        }
+    }
 
     // Tree
     keymap.bind(
@@ -401,14 +391,6 @@ pub(crate) fn build_keymap() -> Keymap<KeyEvent, Scope, Act, Category> {
         Scope::Tree,
     );
 
-    // OrderedEntries
-    crate::screens::ordered_entries::bind_keys(&mut keymap);
-
-    // OrderedValue
-    crate::screens::ordered_value::bind_keys(&mut keymap);
-
-    // MemoryEntries
-    crate::screens::memory_entries::bind_keys(&mut keymap);
 
     keymap
 }
