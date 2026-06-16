@@ -175,21 +175,7 @@ fn draw_entries_create_popup(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 pub(crate) fn draw_value(frame: &mut Frame, app: &App, area: Rect) {
-    if app.tree_editor.is_some() {
-        draw_tree(frame, app, area);
-        return;
-    }
-
-    let paragraph = Paragraph::new(json_highlight::highlight(&app.value_text))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(app.value_title.clone()),
-        )
-        .wrap(Wrap { trim: false })
-        .scroll((app.value_scroll, 0));
-
-    frame.render_widget(paragraph, area);
+    crate::screens::value::draw(frame, app, area);
 }
 
 fn scalar_style(preview: &str) -> Style {
@@ -264,7 +250,7 @@ pub(crate) fn draw_tree(frame: &mut Frame, app: &App, area: Rect) {
     let editing = editor.is_editing();
 
     let title_base = match app.tree_target {
-        TreeTarget::Value => app.value_title.clone(),
+        TreeTarget::Value => app.value.title.clone(),
         TreeTarget::EntriesCreate | TreeTarget::MemoryCreate => "Value".to_string(),
     };
     let title = if editing {

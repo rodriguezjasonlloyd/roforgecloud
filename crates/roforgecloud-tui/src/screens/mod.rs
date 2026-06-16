@@ -9,6 +9,7 @@ pub(crate) mod stores;
 pub(crate) mod universe_choice;
 pub(crate) mod universe_input;
 pub(crate) mod universe_select;
+pub(crate) mod value;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::Rect;
@@ -75,9 +76,9 @@ pub(crate) const SCREENS: [ScreenDef; 13] = [
     // Screen::Value (6)
     ScreenDef {
         scope: Some(Scope::Value),
-        handle_key: crate::update::handle_value_key,
-        draw: crate::ui::draw_value,
-        bind_keys: None,
+        handle_key: value::handle_key,
+        draw: value::draw,
+        bind_keys: Some(value::bind_keys),
     },
     // Screen::Messaging (7)
     ScreenDef {

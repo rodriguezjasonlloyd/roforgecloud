@@ -331,124 +331,7 @@ pub(crate) fn build_keymap() -> Keymap<KeyEvent, Scope, Act, Category> {
     );
 
     // Value
-    bind(
-        &mut keymap,
-        KeyCode::Char('r'),
-        Act { desc: "refresh", handler: |_| Some(Action::LoadValue) },
-        Scope::Value,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Enter,
-        Act {
-            desc: "tree edit",
-            handler: |app| {
-                app.enter_tree_mode();
-                None
-            },
-        },
-        Scope::Value,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('l'),
-        Act {
-            desc: "tree edit",
-            handler: |app| {
-                app.enter_tree_mode();
-                None
-            },
-        },
-        Scope::Value,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('e'),
-        Act { desc: "edit in $EDITOR", handler: |_| Some(Action::EditValueExternal) },
-        Scope::Value,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('d'),
-        Act {
-            desc: "delete",
-            handler: |app| {
-                let pending = match app.value_source {
-                    ValueSource::DataStore => PendingConfirm::DeleteEntry,
-                    ValueSource::MemoryStoreSortedMap => PendingConfirm::DeleteMemoryItem,
-                };
-                app.arm_confirm(pending);
-                None
-            },
-        },
-        Scope::Value,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('t'),
-        Act {
-            desc: "edit ttl",
-            handler: |app| {
-                if app.value_source != ValueSource::MemoryStoreSortedMap {
-                    return None;
-                }
-                app.memory_entries.ttl_edit
-                    .set(app.memory_item_ttl_seconds.to_string());
-                app.memory_entries.ttl_editing = true;
-                None
-            },
-        },
-        Scope::Value,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Up,
-        Act { desc: "scroll up", handler: value_scroll_up },
-        Scope::Value,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('k'),
-        Act { desc: "scroll up", handler: value_scroll_up },
-        Scope::Value,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Down,
-        Act { desc: "scroll down", handler: value_scroll_down },
-        Scope::Value,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('j'),
-        Act { desc: "scroll down", handler: value_scroll_down },
-        Scope::Value,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::PageUp,
-        Act {
-            desc: "scroll up x10",
-            handler: |app| {
-                app.value_scroll = app.value_scroll.saturating_sub(10);
-                None
-            },
-        },
-        Scope::Value,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::PageDown,
-        Act {
-            desc: "scroll down x10",
-            handler: |app| {
-                let max_scroll = app.max_value_scroll();
-                app.value_scroll = (app.value_scroll + 10).min(max_scroll);
-                None
-            },
-        },
-        Scope::Value,
-    );
+    crate::screens::value::bind_keys(&mut keymap);
 
     // Tree
     keymap.bind(
@@ -636,17 +519,6 @@ fn entries_view(app: &mut App) -> Option<Action> {
     Some(Action::LoadValue)
 }
 
-fn value_scroll_up(app: &mut App) -> Option<Action> {
-    app.value_scroll = app.value_scroll.saturating_sub(1);
-    None
-}
-
-fn value_scroll_down(app: &mut App) -> Option<Action> {
-    let max_scroll = app.max_value_scroll();
-    app.value_scroll = (app.value_scroll + 1).min(max_scroll);
-    None
-}
-
 fn tree_yank(app: &mut App) -> Option<Action> {
     let mut clipboard = app.clipboard.take();
     if let Some(status) = app.tree_editor.as_ref().unwrap().yank(&mut clipboard) {
@@ -669,7 +541,7 @@ fn tree_delete_entry(app: &mut App) -> Option<Action> {
     if app.tree_target != TreeTarget::Value {
         return None;
     }
-    let pending = match app.value_source {
+    let pending = match app.value.source {
         ValueSource::DataStore => PendingConfirm::DeleteEntry,
         ValueSource::MemoryStoreSortedMap => PendingConfirm::DeleteMemoryItem,
     };
@@ -1041,41 +913,8 @@ pub(crate) fn handle_entries_key(app: &mut App, code: KeyCode, modifiers: KeyMod
     dispatch(app, Scope::Entries, code, modifiers)
 }
 
-pub(crate) fn handle_value_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
-    if app.tree_editor.is_some() {
-        return handle_tree_key(app, code, modifiers);
-    }
-
-    if app.memory_entries.ttl_editing {
-        return match code {
-            KeyCode::Enter => Some(Action::SaveMemoryTtl),
-            KeyCode::Esc => {
-                app.memory_entries.ttl_editing = false;
-                app.status.clear();
-                None
-            }
-            _ => {
-                handle_text_field_key(&mut app.memory_entries.ttl_edit, code, |c| c.is_ascii_digit());
-                None
-            }
-        };
-    }
-
-    if let Some(result) = handle_pending_confirm(app, code) {
-        return result;
-    }
-    if let Some(result) = quit_key(code, app) {
-        return result;
-    }
-    let back_screen = match app.value_source {
-        ValueSource::DataStore => Screen::Entries,
-        ValueSource::MemoryStoreSortedMap => Screen::MemoryStoreEntries,
-    };
-    if let Some(result) = back_key(code, app, back_screen) {
-        return result;
-    }
-
-    dispatch(app, Scope::Value, code, modifiers)
+pub(crate) fn handle_value_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> Option<Action> {
+    crate::screens::value::handle_key(app, code, mods)
 }
 
 pub(crate) fn handle_ordered_store_input_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> Option<Action> {

@@ -280,12 +280,7 @@ pub struct App {
     pub pending_confirm: Option<PendingConfirm>,
     pub confirm_deadline: Option<std::time::Instant>,
 
-    pub value_title: String,
-    pub value_text: String,
-    pub value_revision: Option<String>,
-    pub value_scroll: u16,
-    pub value_viewport_height: u16,
-    pub value_edit_text: String,
+    pub value: crate::screens::value::State,
 
     pub tree_editor: Option<TreeEditor>,
     pub tree_target: TreeTarget,
@@ -300,8 +295,6 @@ pub struct App {
     pub ordered_entries: crate::screens::ordered_entries::State,
 
     pub ordered_value: crate::screens::ordered_value::State,
-
-    pub value_source: ValueSource,
 
     pub memory_store_input: crate::screens::memory_store_input::State,
 
@@ -361,12 +354,7 @@ impl App {
             entries_create_choosing: false,
             pending_confirm: None,
             confirm_deadline: None,
-            value_title: String::new(),
-            value_text: String::new(),
-            value_revision: None,
-            value_scroll: 0,
-            value_viewport_height: 0,
-            value_edit_text: String::new(),
+            value: crate::screens::value::State::new(),
             tree_editor: None,
             tree_target: TreeTarget::Value,
             clipboard: arboard::Clipboard::new().ok(),
@@ -374,7 +362,6 @@ impl App {
             ordered_store_input: crate::screens::ordered_store_input::State::new(),
             ordered_entries: crate::screens::ordered_entries::State::new(),
             ordered_value: crate::screens::ordered_value::State::new(),
-            value_source: ValueSource::DataStore,
             memory_store_input: crate::screens::memory_store_input::State::new(),
             memory_entries: crate::screens::memory_entries::State::new(),
             memory_item_editing_id: String::new(),
@@ -520,10 +507,7 @@ impl App {
         }
     }
 
-    pub fn max_value_scroll(&self) -> u16 {
-        let total_lines = self.value_text.lines().count() as u16;
-        total_lines.saturating_sub(self.value_viewport_height)
-    }
+
 
     pub async fn load_stores(&mut self) {
         self.resolve_current_universe_name();
@@ -929,7 +913,7 @@ impl App {
     }
 
     pub async fn load_value(&mut self) {
-        if self.value_source == ValueSource::MemoryStoreSortedMap {
+        if self.value.source == ValueSource::MemoryStoreSortedMap {
             return self.load_memory_value().await;
         }
 
@@ -944,12 +928,12 @@ impl App {
             .await
         {
             Ok((value, revision)) => {
-                self.value_title = format!("{}/{} (scope: {scope})", self.stores.data_store_id, key);
-                self.value_text = serde_json::to_string_pretty(&value).unwrap_or_default();
-                self.value_revision = revision;
-                self.value_scroll = 0;
+                self.value.title = format!("{}/{} (scope: {scope})", self.stores.data_store_id, key);
+                self.value.text = serde_json::to_string_pretty(&value).unwrap_or_default();
+                self.value.revision = revision;
+                self.value.scroll = 0;
                 self.tree_editor = None;
-                self.value_source = ValueSource::DataStore;
+                self.value.source = ValueSource::DataStore;
                 self.status.clear();
             }
             Err(err) => {
@@ -964,7 +948,7 @@ impl App {
 
     pub fn enter_tree_mode_for(&mut self, target: TreeTarget) {
         let source = match target {
-            TreeTarget::Value => self.value_text.clone(),
+            TreeTarget::Value => self.value.text.clone(),
             TreeTarget::EntriesCreate => self.entries_create_value.value.clone(),
             TreeTarget::MemoryCreate => self.memory_entries.create_value.value.clone(),
         };
@@ -1009,9 +993,9 @@ impl App {
 
         match self.tree_target {
             TreeTarget::Value => {
-                self.value_edit_text = json;
+                self.value.edit_text = json;
                 self.save_value().await;
-                if let Ok(value) = serde_json::from_str::<serde_json::Value>(&self.value_text) {
+                if let Ok(value) = serde_json::from_str::<serde_json::Value>(&self.value.text) {
                     self.tree_editor = Some(TreeEditor::new(&value));
                     self.pending_confirm = None;
                 }
@@ -1028,7 +1012,7 @@ impl App {
     }
 
     pub async fn save_value(&mut self) {
-        if self.value_source == ValueSource::MemoryStoreSortedMap {
+        if self.value.source == ValueSource::MemoryStoreSortedMap {
             return self.save_memory_value().await;
         }
 
@@ -1036,7 +1020,7 @@ impl App {
             return;
         };
 
-        let value: serde_json::Value = match serde_json::from_str(&self.value_edit_text) {
+        let value: serde_json::Value = match serde_json::from_str(&self.value.edit_text) {
             Ok(value) => value,
             Err(err) => {
                 self.status = format!("invalid JSON: {err}");
@@ -1053,14 +1037,14 @@ impl App {
                 &key,
                 Some(&scope),
                 &value,
-                self.value_revision.as_deref(),
+                self.value.revision.as_deref(),
             )
             .await
         {
             Ok(revision) => {
-                self.value_text = serde_json::to_string_pretty(&value).unwrap_or_default();
-                self.value_revision = revision;
-                self.value_scroll = 0;
+                self.value.text = serde_json::to_string_pretty(&value).unwrap_or_default();
+                self.value.revision = revision;
+                self.value.scroll = 0;
                 self.status = "saved".to_string();
             }
             Err(err) if matches!(&err, roforgecloud_core::error::Error::Api { status, .. } if status.as_u16() == 409 || status.as_u16() == 412) =>
@@ -1075,7 +1059,7 @@ impl App {
     }
 
     pub async fn save_memory_value(&mut self) {
-        let value: serde_json::Value = match serde_json::from_str(&self.value_edit_text) {
+        let value: serde_json::Value = match serde_json::from_str(&self.value.edit_text) {
             Ok(value) => value,
             Err(err) => {
                 self.status = format!("invalid JSON: {err}");
@@ -1092,14 +1076,14 @@ impl App {
                 &self.memory_item_editing_id,
                 &value,
                 self.memory_item_ttl_seconds,
-                self.value_revision.as_deref(),
+                self.value.revision.as_deref(),
             )
             .await
         {
             Ok(item) => {
-                self.value_text = serde_json::to_string_pretty(&item.value).unwrap_or_default();
-                self.value_revision = item.etag.clone();
-                self.value_scroll = 0;
+                self.value.text = serde_json::to_string_pretty(&item.value).unwrap_or_default();
+                self.value.revision = item.etag.clone();
+                self.value.scroll = 0;
                 if let Some(cached) = self.memory_entries.items.iter_mut().find(|i| i.id == item.id) {
                     cached.value = item.value;
                     cached.etag = item.etag;
@@ -1719,13 +1703,13 @@ impl App {
         {
             Ok(item) => {
                 let expire = item.expire_time.clone().unwrap_or_else(|| "—".to_string());
-                self.value_title =
+                self.value.title =
                     format!("{}/{id} (expires: {expire})", self.memory_store_input.id);
-                self.value_text = serde_json::to_string_pretty(&item.value).unwrap_or_default();
-                self.value_revision = item.etag;
-                self.value_scroll = 0;
+                self.value.text = serde_json::to_string_pretty(&item.value).unwrap_or_default();
+                self.value.revision = item.etag;
+                self.value.scroll = 0;
                 self.tree_editor = None;
-                self.value_source = ValueSource::MemoryStoreSortedMap;
+                self.value.source = ValueSource::MemoryStoreSortedMap;
                 self.memory_item_editing_id = id;
                 self.memory_item_ttl_seconds = 3600;
                 self.screen = Screen::Value;
