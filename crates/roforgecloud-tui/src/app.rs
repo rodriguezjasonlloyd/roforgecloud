@@ -217,8 +217,10 @@ pub enum PendingConfirm {
 }
 
 impl PendingConfirm {
-    pub fn footer_hint(&self) -> &'static str {
-        match self {
+    pub fn footer_hint(&self) -> String {
+        use crate::update::{render_hints, HintEntry, ANY_OTHER_KEY_CANCEL};
+
+        let confirm = match self {
             PendingConfirm::DeleteStore
             | PendingConfirm::BulkDeleteStores
             | PendingConfirm::DeleteEntry
@@ -226,14 +228,14 @@ impl PendingConfirm {
             | PendingConfirm::DeleteOrderedEntry
             | PendingConfirm::BulkDeleteOrderedEntries
             | PendingConfirm::DeleteMemoryItem
-            | PendingConfirm::BulkDeleteMemoryItems => "d: confirm delete   any other key: cancel",
-            PendingConfirm::BulkUndeleteStores => "u: confirm undelete   any other key: cancel",
-            PendingConfirm::Quit => "q: confirm quit   any other key: cancel",
-            PendingConfirm::TreeQuit => {
-                "q/esc: discard changes and exit tree   any other key: cancel"
-            }
-            PendingConfirm::TreeRefresh => "r: discard changes and refresh   any other key: cancel",
-        }
+            | PendingConfirm::BulkDeleteMemoryItems => HintEntry::new("d", "confirm delete"),
+            PendingConfirm::BulkUndeleteStores => HintEntry::new("u", "confirm undelete"),
+            PendingConfirm::Quit => HintEntry::new("q", "confirm quit"),
+            PendingConfirm::TreeQuit => HintEntry::new("q/esc", "discard changes and exit tree"),
+            PendingConfirm::TreeRefresh => HintEntry::new("r", "discard changes and refresh"),
+        };
+
+        render_hints(&[confirm, ANY_OTHER_KEY_CANCEL])
     }
 }
 
@@ -253,14 +255,12 @@ pub struct App {
     pub universe_select_selected: usize,
     pub universe_search: TextField,
     pub universe_search_active: bool,
-    pub pending_service: usize,
     pub screen: Screen,
     pub should_quit: bool,
     pub loading: bool,
     pub status: String,
 
-    pub menu_items: Vec<(&'static str, usize)>,
-    pub menu_selected: usize,
+    pub menu: crate::screens::menu::State,
 
     pub stores: Vec<DataStoreInfo>,
     pub stores_selected: usize,
@@ -366,14 +366,6 @@ impl App {
         available_universes: Vec<u64>,
         logged_in: bool,
     ) -> Self {
-        let menu_items = vec![
-            ("Data Stores", SERVICE_DATA_STORES),
-            ("Ordered Data Stores", SERVICE_ORDERED_DATA_STORES),
-            ("Memory Stores", SERVICE_MEMORY_STORES),
-            ("Messaging", SERVICE_MESSAGING),
-            ("Account", SERVICE_ACCOUNT),
-        ];
-
         let username_channel = tokio::sync::mpsc::unbounded_channel();
         let universe_name_channel = tokio::sync::mpsc::unbounded_channel();
 
@@ -393,13 +385,11 @@ impl App {
             universe_search: TextField::default(),
             universe_search_active: false,
             universe_select_selected: 0,
-            pending_service: SERVICE_MESSAGING,
             screen: Screen::Menu,
             should_quit: false,
             loading: false,
             status: String::new(),
-            menu_items,
-            menu_selected: 0,
+            menu: crate::screens::menu::State::new(),
             stores: Vec::new(),
             stores_selected: 0,
             stores_marked: std::collections::HashSet::new(),

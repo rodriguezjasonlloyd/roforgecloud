@@ -1,6 +1,7 @@
 mod app;
 mod json_highlight;
 mod json_tree;
+mod screens;
 mod tree_editor;
 mod ui;
 mod update;
@@ -18,17 +19,10 @@ use crossterm::terminal::{
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
-use app::{Action, App, Screen};
+use app::{Action, App};
 use roforgecloud_core::auth;
 use roforgecloud_core::oauth::{self, OAuthClient};
 use roforgecloud_core::opencloud::{Credentials, OpenCloudClient};
-use update::{
-    handle_entries_key, handle_memory_entries_key, handle_memory_store_input_key,
-    handle_menu_key, handle_messaging_key, handle_ordered_entries_key,
-    handle_ordered_store_input_key, handle_ordered_value_key, handle_stores_key,
-    handle_universe_choice_key, handle_universe_input_key, handle_universe_select_key,
-    handle_value_key,
-};
 
 #[derive(Parser)]
 #[command(
@@ -36,28 +30,8 @@ use update::{
     about = "Browse Roblox Open Cloud data stores"
 )]
 struct Cli {
-    #[arg(long, env = "ROFORGE_API_KEY")]
-    api_key: Option<String>,
-
-    #[arg(long, env = "ROFORGE_OAUTH_CLIENT_ID", default_value = oauth::DEFAULT_CLIENT_ID)]
-    client_id: String,
-
-    /// Only needed to talk to Roblox's OAuth endpoints directly, bypassing
-    /// the relay (e.g. if you registered your own OAuth app).
-    #[arg(long, env = "ROFORGE_OAUTH_CLIENT_SECRET")]
-    client_secret: Option<String>,
-
-    /// OAuth relay that holds the client secret (see `worker/`). Ignored if
-    /// --client-secret is set.
-    #[arg(long, env = "ROFORGE_OAUTH_RELAY_URL", default_value = oauth::DEFAULT_RELAY_URL)]
-    relay_url: String,
-
-    #[arg(
-        long,
-        env = "ROFORGE_OAUTH_REDIRECT_URI",
-        default_value = "http://localhost:8675/callback"
-    )]
-    redirect_uri: String,
+    #[command(flatten)]
+    oauth: auth::OAuthArgs,
 }
 
 #[tokio::main]
@@ -73,12 +47,12 @@ async fn main() -> anyhow::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let has_api_key = cli.api_key.is_some();
+    let has_api_key = cli.oauth.api_key.is_some();
     let mut app = App::new(
         client,
         has_api_key,
         oauth,
-        cli.redirect_uri.clone(),
+        cli.oauth.redirect_uri.clone(),
         available_universes,
         logged_in,
     );
@@ -95,14 +69,9 @@ async fn main() -> anyhow::Result<()> {
 async fn build_client(
     cli: &Cli,
 ) -> anyhow::Result<(OpenCloudClient, Option<OAuthClient>, Vec<u64>, bool)> {
-    let oauth = auth::build_oauth_client(
-        cli.client_id.clone(),
-        cli.client_secret.clone(),
-        &cli.relay_url,
-        &cli.redirect_uri,
-    )?;
+    let oauth = cli.oauth.build_oauth_client()?;
 
-    if let Some(api_key) = &cli.api_key {
+    if let Some(api_key) = &cli.oauth.api_key {
         return Ok((
             OpenCloudClient::new(Credentials::ApiKey(api_key.clone())),
             Some(oauth),
@@ -111,7 +80,7 @@ async fn build_client(
         ));
     }
 
-    let token = auth::access_token(&oauth, &cli.redirect_uri, &auth::NoopLoginPrompt).await?;
+    let token = auth::access_token(&oauth, &cli.oauth.redirect_uri, &auth::NoopLoginPrompt).await?;
 
     let resources = oauth.token_resources(&token).await?;
     let available_universes = oauth::authorized_universe_ids(&resources);
@@ -172,21 +141,7 @@ where
             continue;
         }
 
-        let action = match app.screen {
-            Screen::Menu => handle_menu_key(app, key.code),
-            Screen::UniverseChoice => handle_universe_choice_key(app, key.code),
-            Screen::UniverseSelect => handle_universe_select_key(app, key.code),
-            Screen::UniverseInput => handle_universe_input_key(app, key.code),
-            Screen::Stores => handle_stores_key(app, key.code),
-            Screen::Entries => handle_entries_key(app, key.code, key.modifiers),
-            Screen::Value => handle_value_key(app, key.code, key.modifiers),
-            Screen::Messaging => handle_messaging_key(app, key.code),
-            Screen::OrderedStoreInput => handle_ordered_store_input_key(app, key.code),
-            Screen::OrderedEntries => handle_ordered_entries_key(app, key.code),
-            Screen::OrderedValue => handle_ordered_value_key(app, key.code),
-            Screen::MemoryStoreInput => handle_memory_store_input_key(app, key.code),
-            Screen::MemoryStoreEntries => handle_memory_entries_key(app, key.code, key.modifiers),
-        };
+        let action = (crate::screens::def(app.screen).handle_key)(app, key.code, key.modifiers);
 
         if let Some(Action::EditValueExternal) = action {
             edit_value_external(terminal, app).await?;
