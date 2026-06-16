@@ -13,7 +13,7 @@ use std::io;
 use std::time::Duration;
 
 use clap::Parser;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use crossterm::event::{self, Event, KeyEventKind};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -128,10 +128,6 @@ where
             continue;
         }
 
-        if key.code == KeyCode::Char('?') && !app.text_input_active() && !app.which_key.active {
-            app.which_key.toggle();
-            continue;
-        }
 
         let action = (screens::def(app.screen).handle_key)(app, key.code, key.modifiers);
 

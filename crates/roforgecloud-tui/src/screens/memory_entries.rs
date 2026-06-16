@@ -10,7 +10,7 @@ use roforgecloud_core::opencloud::memory_store::SortedMapItem;
 
 use crate::app::{Action, App, MemoryCreateField, PendingConfirm, Screen, TextField, TextFieldExt, TreeTarget};
 use crate::status;
-use crate::update::{self, Act, Category, Scope, bind, bind_list_nav, dispatch, handle_pending_confirm, handle_text_field_key, list_nav_key, quit_key};
+use crate::update::{self, Act, Category, Scope, bind, bind_list_nav, bind_quit, dispatch, handle_pending_confirm, handle_text_field_key, list_nav_key};
 use crate::ui::{HIGHLIGHT_STYLE, breadcrumb, centered_rect_lines, centered_rect, field_box, field_paragraph_box, draw_tree, universe_label};
 
 pub(crate) struct State {
@@ -91,6 +91,8 @@ impl State {
 
 pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
     bind_list_nav(km, Scope::MemoryEntries);
+    bind_quit(km, Scope::MemoryEntries);
+    bind(km, KeyCode::Char('h'), Act { desc: "back", handler: back }, Scope::MemoryEntries);
     bind(km, KeyCode::Char('n'), Act { desc: "next page", handler: |_| Some(Action::LoadNextMemoryItemsPage) }, Scope::MemoryEntries);
     bind(km, KeyCode::Char('p'), Act { desc: "prev page", handler: |_| Some(Action::LoadPrevMemoryItemsPage) }, Scope::MemoryEntries);
     bind(km, KeyCode::Char('r'), Act { desc: "refresh", handler: |_| Some(Action::RefreshMemoryItems) }, Scope::MemoryEntries);
@@ -211,22 +213,6 @@ pub(crate) fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) 
     if let Some(result) = list_nav_key(code, &mut app.memory_entries.selected, visible) {
         return result;
     }
-    if let Some(result) = quit_key(code, app) {
-        return result;
-    }
-
-    if matches!(code, KeyCode::Char('h')) {
-        if !app.memory_entries.search.get_value().is_empty() {
-            app.memory_entries.search.clear();
-            app.memory_entries.selected = 0;
-            app.status.clear();
-            return None;
-        }
-        app.screen = Screen::MemoryStoreInput;
-        app.status.clear();
-        return None;
-    }
-
     dispatch(app, Scope::MemoryEntries, code, modifiers)
 }
 
@@ -366,4 +352,16 @@ fn handle_create_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> O
             None
         }
     }
+}
+
+fn back(app: &mut App) -> Option<Action> {
+    if !app.memory_entries.search.get_value().is_empty() {
+        app.memory_entries.search.clear();
+        app.memory_entries.selected = 0;
+        app.status.clear();
+        return None;
+    }
+    app.screen = Screen::MemoryStoreInput;
+    app.status.clear();
+    None
 }

@@ -208,6 +208,20 @@ pub(crate) fn bind_list_nav(km: &mut Keymap<KeyEvent, Scope, Act, Category>, sco
     bind(km, KeyCode::Up,        Act { desc: "move up",  handler: |_| None }, scope);
 }
 
+pub(crate) fn bind_quit(km: &mut Keymap<KeyEvent, Scope, Act, Category>, scope: Scope) {
+    bind(km, KeyCode::Char('q'), Act { desc: "quit", handler: do_quit }, scope.clone());
+    bind(km, KeyCode::Char('?'), Act { desc: "help", handler: |app| { app.which_key.toggle(); None } }, scope);
+}
+
+fn do_quit(app: &mut App) -> Option<Action> {
+    if app.needs_quit_confirm() {
+        app.arm_confirm(PendingConfirm::Quit);
+    } else {
+        app.should_quit = true;
+    }
+    None
+}
+
 pub(crate) fn dispatch(
     app: &mut App,
     scope: Scope,
@@ -584,18 +598,6 @@ pub(crate) fn list_nav_key(
     }
 }
 
-pub(crate) fn quit_key(code: KeyCode, app: &mut App) -> Option<Option<Action>> {
-    if app.which_key.active { return None; }
-    if code != KeyCode::Char('q') {
-        return None;
-    }
-    if app.needs_quit_confirm() {
-        app.arm_confirm(PendingConfirm::Quit);
-    } else {
-        app.should_quit = true;
-    }
-    Some(None)
-}
 
 pub(crate) fn handle_pending_confirm(app: &mut App, code: KeyCode) -> Option<Option<Action>> {
     let pending = app.pending_confirm.take()?;
@@ -642,17 +644,6 @@ pub(crate) fn handle_pending_confirm(app: &mut App, code: KeyCode) -> Option<Opt
     }
 }
 
-pub(crate) fn back_key(code: KeyCode, app: &mut App, screen: Screen) -> Option<Option<Action>> {
-    if app.which_key.active { return None; }
-    match code {
-        KeyCode::Char('h') => {
-            app.screen = screen;
-            app.status.clear();
-            Some(None)
-        }
-        _ => None,
-    }
-}
 
 struct KeyAction {
     hint: fn(&App) -> Option<HintEntry>,

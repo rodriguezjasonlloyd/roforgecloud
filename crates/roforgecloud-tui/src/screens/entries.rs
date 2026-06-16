@@ -13,8 +13,8 @@ use crate::app::{Action, App, EntriesCreateField, PendingConfirm, Screen, TextFi
 use crate::status;
 use crate::user_lookup;
 use crate::update::{
-    Act, Category, Scope, bind, bind_list_nav, dispatch, handle_pending_confirm, handle_text_field_key,
-    handle_tree_key, list_nav_key, quit_key,
+    Act, Category, Scope, bind, bind_list_nav, bind_quit, dispatch, handle_pending_confirm, handle_text_field_key,
+    handle_tree_key, list_nav_key,
 };
 use crate::ui::{HIGHLIGHT_STYLE, breadcrumb, centered_rect, centered_rect_lines, draw_tree, field_box, field_paragraph_box, universe_label};
 
@@ -133,6 +133,8 @@ impl State {
 
 pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
     bind_list_nav(km, Scope::Entries);
+    bind_quit(km, Scope::Entries);
+    bind(km, KeyCode::Char('h'), Act { desc: "back", handler: back }, Scope::Entries);
     bind(km, KeyCode::Char('n'), Act { desc: "next page", handler: |_| Some(Action::LoadNextEntriesPage) }, Scope::Entries);
     bind(km, KeyCode::Char('p'), Act { desc: "prev page", handler: |_| Some(Action::LoadPrevEntriesPage) }, Scope::Entries);
     bind(km, KeyCode::Char('r'), Act { desc: "refresh", handler: |_| Some(Action::RefreshEntries) }, Scope::Entries);
@@ -221,22 +223,6 @@ pub(crate) fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) 
     if let Some(result) = list_nav_key(code, &mut app.entries.selected, visible) {
         return result;
     }
-    if let Some(result) = quit_key(code, app) {
-        return result;
-    }
-
-    if matches!(code, KeyCode::Char('h')) {
-        if !app.entries.search.get_value().is_empty() {
-            app.entries.search.clear();
-            app.entries.selected = 0;
-            app.status.clear();
-            return None;
-        }
-        app.screen = Screen::Stores;
-        app.status.clear();
-        return Some(Action::LoadStores);
-    }
-
     dispatch(app, Scope::Entries, code, modifiers)
 }
 
@@ -370,4 +356,16 @@ fn handle_create_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> O
             None
         }
     }
+}
+
+fn back(app: &mut App) -> Option<Action> {
+    if !app.entries.search.get_value().is_empty() {
+        app.entries.search.clear();
+        app.entries.selected = 0;
+        app.status.clear();
+        return None;
+    }
+    app.screen = Screen::Stores;
+    app.status.clear();
+    Some(Action::LoadStores)
 }

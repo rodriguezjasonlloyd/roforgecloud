@@ -10,7 +10,7 @@ use roforgecloud_core::opencloud::ordered_datastore::OrderedDataStoreEntry;
 
 use crate::app::{Action, App, OrderedCreateField, PendingConfirm, Screen, TextField, TextFieldExt};
 use crate::status;
-use crate::update::{self, Act, Category, Scope, bind, bind_list_nav, dispatch, handle_pending_confirm, handle_text_field_key, list_nav_key, quit_key};
+use crate::update::{self, Act, Category, Scope, bind, bind_list_nav, bind_quit, dispatch, handle_pending_confirm, handle_text_field_key, list_nav_key};
 use crate::ui::{HIGHLIGHT_STYLE, breadcrumb, centered_rect_lines, field_box, field_paragraph_box, universe_label};
 
 pub(crate) struct State {
@@ -85,6 +85,8 @@ impl State {
 
 pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
     bind_list_nav(km, Scope::OrderedEntries);
+    bind_quit(km, Scope::OrderedEntries);
+    bind(km, KeyCode::Char('h'), Act { desc: "back", handler: back }, Scope::OrderedEntries);
     bind(km, KeyCode::Char('n'), Act { desc: "next page", handler: |_| Some(Action::LoadNextOrderedEntriesPage) }, Scope::OrderedEntries);
     bind(km, KeyCode::Char('p'), Act { desc: "prev page", handler: |_| Some(Action::LoadPrevOrderedEntriesPage) }, Scope::OrderedEntries);
     bind(km, KeyCode::Char('r'), Act { desc: "refresh", handler: |_| Some(Action::RefreshOrderedEntries) }, Scope::OrderedEntries);
@@ -169,22 +171,6 @@ pub(crate) fn handle_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> O
     if let Some(result) = list_nav_key(code, &mut app.ordered_entries.selected, visible) {
         return result;
     }
-    if let Some(result) = quit_key(code, app) {
-        return result;
-    }
-
-    if matches!(code, KeyCode::Char('h')) {
-        if !app.ordered_entries.search.get_value().is_empty() {
-            app.ordered_entries.search.clear();
-            app.ordered_entries.selected = 0;
-            app.status.clear();
-            return None;
-        }
-        app.screen = Screen::OrderedStoreInput;
-        app.status.clear();
-        return None;
-    }
-
     dispatch(app, Scope::OrderedEntries, code, KeyModifiers::empty())
 }
 
@@ -302,4 +288,16 @@ fn handle_create_key(app: &mut App, code: KeyCode) -> Option<Action> {
             None
         }
     }
+}
+
+fn back(app: &mut App) -> Option<Action> {
+    if !app.ordered_entries.search.get_value().is_empty() {
+        app.ordered_entries.search.clear();
+        app.ordered_entries.selected = 0;
+        app.status.clear();
+        return None;
+    }
+    app.screen = Screen::OrderedStoreInput;
+    app.status.clear();
+    None
 }

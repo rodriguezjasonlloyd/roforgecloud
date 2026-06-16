@@ -153,7 +153,19 @@ fn flatten_node(node: &JsonNode, depth: usize, path: &mut Vec<usize>, rows: &mut
                 JsonNodeValue::Array(_) => ("[", "]"),
                 _ => ("{", "}"),
             };
-            if node.collapsed {
+            if items.is_empty() {
+                rows.push(FlatRow {
+                    depth,
+                    path: path.clone(),
+                    key: node.key.clone(),
+                    preview: format!("{open}{close}"),
+                    is_container: false,
+                    is_collapsed: false,
+                    is_leaf: true,
+                    is_closing: false,
+                    scalar_kind: None,
+                });
+            } else if node.collapsed {
                 rows.push(FlatRow {
                     depth,
                     path: path.clone(),

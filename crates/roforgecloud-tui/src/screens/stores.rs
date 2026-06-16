@@ -10,7 +10,7 @@ use ratatui_which_key::Keymap;
 use roforgecloud_core::opencloud::datastore::DataStoreInfo;
 
 use crate::app::{Action, App, EntriesCreateField, PendingConfirm, Screen, TextField, TextFieldExt};
-use crate::update::{Act, Category, Scope, bind, bind_list_nav, back_key, dispatch, handle_pending_confirm, handle_text_field_key, list_nav_key, quit_key};
+use crate::update::{Act, Category, Scope, bind, bind_list_nav, bind_quit, dispatch, handle_pending_confirm, handle_text_field_key, list_nav_key};
 use crate::ui::{HIGHLIGHT_STYLE, breadcrumb, centered_rect_lines, field_box, universe_label};
 
 pub(crate) struct State {
@@ -54,6 +54,8 @@ impl State {
 
 pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
     bind_list_nav(km, Scope::Stores);
+    bind_quit(km, Scope::Stores);
+    bind(km, KeyCode::Char('h'), Act { desc: "back", handler: |app| { app.screen = Screen::UniverseChoice; app.status.clear(); None } }, Scope::Stores);
     bind(km, KeyCode::Char('l'), Act { desc: "open", handler: open }, Scope::Stores);
     bind(
         km,
@@ -98,13 +100,6 @@ pub(crate) fn handle_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> O
     if let Some(result) = list_nav_key(code, &mut app.stores.selected, len) {
         return result;
     }
-    if let Some(result) = back_key(code, app, Screen::UniverseChoice) {
-        return result;
-    }
-    if let Some(result) = quit_key(code, app) {
-        return result;
-    }
-
     dispatch(app, Scope::Stores, code, KeyModifiers::empty())
 }
 

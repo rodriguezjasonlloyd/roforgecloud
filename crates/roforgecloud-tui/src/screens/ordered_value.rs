@@ -8,7 +8,7 @@ use ratatui_which_key::Keymap;
 use crossterm::event::KeyEvent;
 
 use crate::app::{Action, App, PendingConfirm, Screen, TextFieldExt};
-use crate::update::{self, Act, Category, Scope, bind, dispatch, back_key, quit_key, handle_pending_confirm};
+use crate::update::{self, Act, Category, Scope, bind, bind_quit, dispatch, handle_pending_confirm};
 use crate::ui::{breadcrumb, universe_label};
 
 pub(crate) struct State {
@@ -36,6 +36,8 @@ impl State {
 }
 
 pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
+    bind_quit(km, Scope::OrderedValue);
+    bind(km, KeyCode::Char('h'), Act { desc: "back", handler: |app| { app.screen = Screen::OrderedEntries; app.status.clear(); None } }, Scope::OrderedValue);
     bind(km, KeyCode::Char('r'), Act { desc: "refresh", handler: |_| Some(Action::LoadOrderedValue) }, Scope::OrderedValue);
     bind(km, KeyCode::Enter, Act { desc: "edit", handler: value_edit }, Scope::OrderedValue);
     bind(km, KeyCode::Char('e'), Act { desc: "edit", handler: value_edit }, Scope::OrderedValue);
@@ -100,12 +102,6 @@ pub(crate) fn handle_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> O
     }
 
     if let Some(result) = handle_pending_confirm(app, code) {
-        return result;
-    }
-    if let Some(result) = quit_key(code, app) {
-        return result;
-    }
-    if let Some(result) = back_key(code, app, Screen::OrderedEntries) {
         return result;
     }
 

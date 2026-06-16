@@ -32,15 +32,13 @@ impl State {
 
 pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
     update::bind_list_nav(km, Scope::Menu);
+    update::bind_quit(km, Scope::Menu);
     update::bind(km, KeyCode::Char('l'), Act { desc: "open", handler: open }, Scope::Menu);
 }
 
 pub(crate) fn handle_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> Option<Action> {
     let len = app.menu.items.len();
     if let Some(result) = update::list_nav_key(code, &mut app.menu.selected, len) {
-        return result;
-    }
-    if let Some(result) = update::quit_key(code, app) {
         return result;
     }
     update::dispatch(app, Scope::Menu, code, KeyModifiers::empty())

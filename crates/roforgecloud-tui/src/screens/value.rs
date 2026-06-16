@@ -5,7 +5,7 @@ use ratatui::Frame;
 use ratatui_which_key::Keymap;
 
 use crate::app::{Action, App, PendingConfirm, Screen, TextFieldExt, ValueSource};
-use crate::update::{Act, Category, Scope, bind, back_key, dispatch, handle_pending_confirm, handle_text_field_key, handle_tree_key, quit_key};
+use crate::update::{Act, Category, Scope, bind, bind_quit, dispatch, handle_pending_confirm, handle_text_field_key, handle_tree_key};
 use crate::json_highlight;
 use crate::ui::{breadcrumb, draw_tree, universe_label};
 
@@ -43,6 +43,15 @@ impl State {
 }
 
 pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
+    bind_quit(km, Scope::Value);
+    bind(km, KeyCode::Char('h'), Act { desc: "back", handler: |app| {
+        app.screen = match app.value.source {
+            ValueSource::DataStore => Screen::Entries,
+            ValueSource::MemoryStoreSortedMap => Screen::MemoryStoreEntries,
+        };
+        app.status.clear();
+        None
+    }}, Scope::Value);
     bind(km, KeyCode::Char('r'), Act { desc: "refresh", handler: |_| Some(Action::LoadValue) }, Scope::Value);
     km.describe_group_for_scope("e", "edit", Scope::Value);
     km.bind("et", Act { desc: "tree edit", handler: |app| { app.enter_tree_mode(); None } }, Category::General, Scope::Value);
@@ -127,17 +136,6 @@ pub(crate) fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) 
     if let Some(result) = handle_pending_confirm(app, code) {
         return result;
     }
-    if let Some(result) = quit_key(code, app) {
-        return result;
-    }
-    let back_screen = match app.value.source {
-        ValueSource::DataStore => Screen::Entries,
-        ValueSource::MemoryStoreSortedMap => Screen::MemoryStoreEntries,
-    };
-    if let Some(result) = back_key(code, app, back_screen) {
-        return result;
-    }
-
     dispatch(app, Scope::Value, code, modifiers)
 }
 

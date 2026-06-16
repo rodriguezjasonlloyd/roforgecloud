@@ -28,6 +28,8 @@ impl State {
 
 pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
     update::bind_list_nav(km, Scope::UniverseSelect);
+    update::bind_quit(km, Scope::UniverseSelect);
+    update::bind(km, KeyCode::Char('h'), Act { desc: "back", handler: back }, Scope::UniverseSelect);
     update::bind(
         km,
         KeyCode::Char('/'),
@@ -64,21 +66,6 @@ pub(crate) fn handle_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> O
     if let Some(result) = update::list_nav_key(code, &mut app.universe_select.selected, visible_len) {
         return result;
     }
-    if let Some(result) = update::quit_key(code, app) {
-        return result;
-    }
-
-    if matches!(code, KeyCode::Char('h')) {
-        if !app.universe_select.search.get_value().is_empty() {
-            app.universe_select.search.clear();
-            app.universe_select.selected = 0;
-            app.status.clear();
-            return None;
-        }
-        app.screen = Screen::UniverseChoice;
-        app.status.clear();
-        return None;
-    }
 
     update::dispatch(app, Scope::UniverseSelect, code, KeyModifiers::empty())
 }
@@ -114,6 +101,18 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
         state.select(Some(app.universe_select.selected));
     }
     frame.render_stateful_widget(list, area, &mut state);
+}
+
+fn back(app: &mut App) -> Option<Action> {
+    if !app.universe_select.search.get_value().is_empty() {
+        app.universe_select.search.clear();
+        app.universe_select.selected = 0;
+        app.status.clear();
+        return None;
+    }
+    app.screen = Screen::UniverseChoice;
+    app.status.clear();
+    None
 }
 
 fn choose(app: &mut App) -> Option<Action> {
