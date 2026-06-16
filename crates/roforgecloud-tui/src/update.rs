@@ -578,6 +578,7 @@ pub(crate) fn list_nav_key(
 }
 
 pub(crate) fn quit_key(code: KeyCode, app: &mut App) -> Option<Option<Action>> {
+    if app.which_key.active { return None; }
     if !matches!(code, KeyCode::Char('q') | KeyCode::Esc) {
         return None;
     }
@@ -635,6 +636,7 @@ pub(crate) fn handle_pending_confirm(app: &mut App, code: KeyCode) -> Option<Opt
 }
 
 pub(crate) fn back_key(code: KeyCode, app: &mut App, screen: Screen) -> Option<Option<Action>> {
+    if app.which_key.active { return None; }
     match code {
         KeyCode::Char('h') => {
             app.screen = screen;

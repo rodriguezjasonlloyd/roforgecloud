@@ -128,16 +128,7 @@ where
             continue;
         }
 
-        if app.which_key.active {
-            if matches!(
-                key.code,
-                KeyCode::Char('?') | KeyCode::Esc | KeyCode::Char('q')
-            ) {
-                app.which_key.dismiss();
-            }
-            continue;
-        }
-        if key.code == KeyCode::Char('?') && !app.text_input_active() {
+        if key.code == KeyCode::Char('?') && !app.text_input_active() && !app.which_key.active {
             app.which_key.toggle();
             continue;
         }
