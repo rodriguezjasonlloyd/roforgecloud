@@ -1,14 +1,10 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
 
-use crate::app::{
-    App, EntriesCreateField, MemoryCreateField, MessagingField, OrderedCreateField,
-    OrderedInputField, Screen, TextField, TreeTarget,
-};
-use crate::json_highlight;
+use crate::app::{App, Screen, TextField, TreeTarget};
 use crate::json_tree;
 
 pub(crate) const HIGHLIGHT_STYLE: Style = Style::new().bg(Color::Rgb(60, 60, 60)).fg(Color::White);
@@ -28,58 +24,6 @@ pub fn draw(frame: &mut Frame, app: &App) {
     if app.which_key.active {
         draw_help(frame, app);
     }
-}
-
-pub(crate) fn draw_universe_input(frame: &mut Frame, app: &App, area: Rect) {
-    crate::screens::universe_input::draw(frame, app, area);
-}
-
-pub(crate) fn draw_menu(frame: &mut Frame, app: &App, area: Rect) {
-    crate::screens::menu::draw(frame, app, area);
-}
-
-pub(crate) fn draw_universe_choice(frame: &mut Frame, app: &App, area: Rect) {
-    crate::screens::universe_choice::draw(frame, app, area);
-}
-
-pub(crate) fn draw_universe_select(frame: &mut Frame, app: &App, area: Rect) {
-    crate::screens::universe_select::draw(frame, app, area);
-}
-
-pub(crate) fn draw_messaging(frame: &mut Frame, app: &App, area: Rect) {
-    crate::screens::messaging::draw(frame, app, area);
-}
-
-pub(crate) fn draw_ordered_store_input(frame: &mut Frame, app: &App, area: Rect) {
-    crate::screens::ordered_store_input::draw(frame, app, area);
-}
-
-pub(crate) fn draw_ordered_entries(frame: &mut Frame, app: &App, area: Rect) {
-    crate::screens::ordered_entries::draw(frame, app, area);
-}
-
-pub(crate) fn draw_ordered_value(frame: &mut Frame, app: &App, area: Rect) {
-    crate::screens::ordered_value::draw(frame, app, area);
-}
-
-pub(crate) fn draw_memory_store_input(frame: &mut Frame, app: &App, area: Rect) {
-    crate::screens::memory_store_input::draw(frame, app, area);
-}
-
-pub(crate) fn draw_memory_entries(frame: &mut Frame, app: &App, area: Rect) {
-    crate::screens::memory_entries::draw(frame, app, area);
-}
-
-pub(crate) fn draw_stores(frame: &mut Frame, app: &App, area: Rect) {
-    crate::screens::stores::draw(frame, app, area);
-}
-
-pub(crate) fn draw_entries(frame: &mut Frame, app: &App, area: Rect) {
-    crate::screens::entries::draw(frame, app, area);
-}
-
-pub(crate) fn draw_value(frame: &mut Frame, app: &App, area: Rect) {
-    crate::screens::value::draw(frame, app, area);
 }
 
 fn scalar_style(preview: &str) -> Style {

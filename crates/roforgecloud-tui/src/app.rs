@@ -808,10 +808,6 @@ impl App {
         }
     }
 
-    pub fn toggle_entry_mark(&mut self) { self.entries.toggle_mark(); }
-
-    pub fn toggle_select_all_visible(&mut self) { self.entries.toggle_select_all_visible(); }
-
     pub fn visible_entry_indices(&self) -> Vec<usize> { self.entries.visible_indices() }
 
     fn current_entry_index(&self) -> Option<usize> { self.entries.current_index() }

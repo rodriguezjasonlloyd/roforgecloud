@@ -3,9 +3,9 @@ use ratatui_which_key::{Key, Keymap};
 pub(crate) use ratatui_which_key::WhichKeyState;
 
 use crate::app::{
-    Action, App, EntriesCreateField, MemoryCreateField, MessagingField, OrderedCreateField,
-    OrderedInputField, PendingConfirm, Screen, TextField, TreeTarget, ValueSource,
-    SERVICE_DATA_STORES, SERVICE_MEMORY_STORES, SERVICE_MESSAGING, SERVICE_ORDERED_DATA_STORES,
+    Action, App, EntriesCreateField, MemoryCreateField, PendingConfirm, Screen, TextField,
+    TreeTarget, ValueSource, SERVICE_DATA_STORES, SERVICE_MEMORY_STORES, SERVICE_MESSAGING,
+    SERVICE_ORDERED_DATA_STORES,
 };
 
 /// Which-key scope: one variant per screen that has a key dispatch table.
@@ -655,32 +655,8 @@ pub(crate) fn back_key(code: KeyCode, app: &mut App, screen: Screen) -> Option<O
     }
 }
 
-pub(crate) fn handle_menu_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> Option<Action> {
-    crate::screens::menu::handle_key(app, code, mods)
-}
-
-pub(crate) fn handle_universe_choice_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> Option<Action> {
-    crate::screens::universe_choice::handle_key(app, code, mods)
-}
-
-pub(crate) fn handle_universe_select_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> Option<Action> {
-    crate::screens::universe_select::handle_key(app, code, mods)
-}
-
-pub(crate) fn handle_universe_input_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> Option<Action> {
-    crate::screens::universe_input::handle_key(app, code, mods)
-}
-
-pub(crate) fn handle_messaging_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> Option<Action> {
-    crate::screens::messaging::handle_key(app, code, mods)
-}
-
 struct KeyAction {
     hint: fn(&App) -> Option<HintEntry>,
-}
-
-pub(crate) fn handle_stores_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> Option<Action> {
-    crate::screens::stores::handle_key(app, code, mods)
 }
 
 const ENTRIES_CREATE_KEYS: &[KeyAction] = &[
@@ -704,28 +680,8 @@ pub(crate) fn entries_create_hints(app: &App) -> String {
     )
 }
 
-pub(crate) fn handle_entries_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> Option<Action> {
-    crate::screens::entries::handle_key(app, code, mods)
-}
-
-pub(crate) fn handle_value_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> Option<Action> {
-    crate::screens::value::handle_key(app, code, mods)
-}
-
-pub(crate) fn handle_ordered_store_input_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> Option<Action> {
-    crate::screens::ordered_store_input::handle_key(app, code, mods)
-}
-
 pub(crate) fn is_numeric_input_char(c: char) -> bool {
     c.is_ascii_digit() || c == '.' || c == '-'
-}
-
-pub(crate) fn handle_ordered_entries_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> Option<Action> {
-    crate::screens::ordered_entries::handle_key(app, code, mods)
-}
-
-pub(crate) fn handle_ordered_value_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> Option<Action> {
-    crate::screens::ordered_value::handle_key(app, code, mods)
 }
 
 pub(crate) fn handle_tree_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
@@ -790,10 +746,6 @@ pub(crate) fn handle_tree_key(app: &mut App, code: KeyCode, modifiers: KeyModifi
     dispatch(app, Scope::Tree, code, modifiers)
 }
 
-pub(crate) fn handle_memory_store_input_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> Option<Action> {
-    crate::screens::memory_store_input::handle_key(app, code, mods)
-}
-
 const MEMORY_CREATE_KEYS: &[KeyAction] = &[
     KeyAction { hint: |_| Some(TAB_SWITCH_FIELD) },
     KeyAction { hint: |_| Some(HintEntry::new("enter", "create")) },
@@ -815,10 +767,3 @@ pub(crate) fn memory_create_hints(app: &App) -> String {
     )
 }
 
-pub(crate) fn handle_memory_entries_key(
-    app: &mut App,
-    code: KeyCode,
-    modifiers: KeyModifiers,
-) -> Option<Action> {
-    crate::screens::memory_entries::handle_key(app, code, modifiers)
-}
