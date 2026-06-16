@@ -1,3 +1,4 @@
+pub(crate) mod entries;
 pub(crate) mod memory_entries;
 pub(crate) mod memory_store_input;
 pub(crate) mod menu;
@@ -69,9 +70,9 @@ pub(crate) const SCREENS: [ScreenDef; 13] = [
     // Screen::Entries (5)
     ScreenDef {
         scope: Some(Scope::Entries),
-        handle_key: crate::update::handle_entries_key,
-        draw: crate::ui::draw_entries,
-        bind_keys: None,
+        handle_key: entries::handle_key,
+        draw: entries::draw,
+        bind_keys: Some(entries::bind_keys),
     },
     // Screen::Value (6)
     ScreenDef {

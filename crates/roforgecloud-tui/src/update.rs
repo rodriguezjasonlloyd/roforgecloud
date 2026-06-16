@@ -244,91 +244,7 @@ pub(crate) fn build_keymap() -> Keymap<KeyEvent, Scope, Act, Category> {
     crate::screens::stores::bind_keys(&mut keymap);
 
     // Entries
-    bind(
-        &mut keymap,
-        KeyCode::Char('n'),
-        Act { desc: "next page", handler: |_| Some(Action::LoadNextEntriesPage) },
-        Scope::Entries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('p'),
-        Act { desc: "prev page", handler: |_| Some(Action::LoadPrevEntriesPage) },
-        Scope::Entries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('r'),
-        Act { desc: "refresh", handler: |_| Some(Action::RefreshEntries) },
-        Scope::Entries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('/'),
-        Act {
-            desc: "search",
-            handler: |app| {
-                app.entries_search_active = true;
-                app.status = "loading all entries for search...".to_string();
-                Some(Action::LoadAllEntriesForSearch)
-            },
-        },
-        Scope::Entries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('c'),
-        Act {
-            desc: "create",
-            handler: |app| {
-                app.entries_create_choosing = true;
-                None
-            },
-        },
-        Scope::Entries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char(' '),
-        Act {
-            desc: "select",
-            handler: |app| {
-                app.toggle_entry_mark();
-                None
-            },
-        },
-        Scope::Entries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('a'),
-        Act {
-            desc: "select all",
-            handler: |app| {
-                app.toggle_select_all_visible();
-                None
-            },
-        },
-        Scope::Entries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('d'),
-        Act { desc: "delete", handler: entries_delete },
-        Scope::Entries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Enter,
-        Act { desc: "view", handler: entries_view },
-        Scope::Entries,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('l'),
-        Act { desc: "view", handler: entries_view },
-        Scope::Entries,
-    );
+    crate::screens::entries::bind_keys(&mut keymap);
 
     // Value
     crate::screens::value::bind_keys(&mut keymap);
@@ -499,25 +415,7 @@ pub(crate) fn build_keymap() -> Keymap<KeyEvent, Scope, Act, Category> {
 
 
 
-fn entries_delete(app: &mut App) -> Option<Action> {
-    if !app.entries_marked.is_empty() {
-        app.arm_confirm(PendingConfirm::BulkDeleteEntries);
-        return None;
-    }
-    if app.visible_entry_indices().is_empty() {
-        return None;
-    }
-    app.arm_confirm(PendingConfirm::DeleteEntry);
-    None
-}
 
-fn entries_view(app: &mut App) -> Option<Action> {
-    if app.visible_entry_indices().is_empty() {
-        return None;
-    }
-    app.screen = Screen::Value;
-    Some(Action::LoadValue)
-}
 
 fn tree_yank(app: &mut App) -> Option<Action> {
     let mut clipboard = app.clipboard.take();
@@ -790,7 +688,7 @@ const ENTRIES_CREATE_KEYS: &[KeyAction] = &[
     KeyAction { hint: |_| Some(HintEntry::new("enter", "create")) },
     KeyAction {
         hint: |app| {
-            (app.entries_create_field == EntriesCreateField::Value)
+            (app.entries.create_field == EntriesCreateField::Value)
                 .then_some(HintEntry::new("ctrl+t", "tree edit value"))
         },
     },
@@ -806,111 +704,8 @@ pub(crate) fn entries_create_hints(app: &App) -> String {
     )
 }
 
-fn handle_entries_create_key(
-    app: &mut App,
-    code: KeyCode,
-    modifiers: KeyModifiers,
-) -> Option<Action> {
-    if app.entries_create_field == EntriesCreateField::Value
-        && code == KeyCode::Char('t')
-        && modifiers.contains(KeyModifiers::CONTROL)
-    {
-        app.enter_tree_mode_for(TreeTarget::EntriesCreate);
-        return None;
-    }
-
-    match code {
-        KeyCode::Tab | KeyCode::BackTab => {
-            app.entries_create_field = match app.entries_create_field {
-                EntriesCreateField::Id => EntriesCreateField::Value,
-                EntriesCreateField::Value => EntriesCreateField::Id,
-            };
-            None
-        }
-        KeyCode::Enter => Some(Action::CreateEntry),
-        KeyCode::Esc => {
-            app.entries_create_active = false;
-            app.status.clear();
-            None
-        }
-        _ => {
-            let field = match app.entries_create_field {
-                EntriesCreateField::Id => &mut app.entries_create_id,
-                EntriesCreateField::Value => &mut app.entries_create_value,
-            };
-            handle_text_field_key(field, code, |_| true);
-            None
-        }
-    }
-}
-
-pub(crate) fn handle_entries_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
-    if app.tree_editor.is_some() {
-        return handle_tree_key(app, code, modifiers);
-    }
-
-    if app.entries_create_active {
-        return handle_entries_create_key(app, code, modifiers);
-    }
-
-    if app.entries_create_choosing {
-        app.entries_create_choosing = false;
-        return match code {
-            KeyCode::Char('n') => {
-                app.entries_create_id.clear();
-                app.entries_create_value.clear();
-                app.entries_create_field = EntriesCreateField::Id;
-                app.entries_create_active = true;
-                None
-            }
-            KeyCode::Char('e') => Some(Action::CreateEntryExternal),
-            _ => None,
-        };
-    }
-
-    if app.entries_search_active {
-        return match code {
-            KeyCode::Enter | KeyCode::Esc => {
-                app.entries_search_active = false;
-                app.entries_search.clear();
-                app.status.clear();
-                Some(Action::RefreshEntries)
-            }
-            _ => {
-                if handle_text_field_key(&mut app.entries_search, code, |_| true) {
-                    app.entries_selected = 0;
-                }
-                None
-            }
-        };
-    }
-
-    if let Some(result) = handle_pending_confirm(app, code) {
-        return result;
-    }
-
-    let visible = app.visible_entry_indices().len();
-
-    if let Some(result) = list_nav_key(code, &mut app.entries_selected, visible) {
-        return result;
-    }
-    if let Some(result) = quit_key(code, app) {
-        return result;
-    }
-
-    if matches!(code, KeyCode::Esc | KeyCode::Backspace | KeyCode::Char('h')) {
-        if !app.entries_search.value.is_empty() {
-            app.entries_search.clear();
-            app.entries_selected = 0;
-            app.status.clear();
-            return None;
-        }
-        app.screen = Screen::Stores;
-        app.status.clear();
-        return Some(Action::LoadStores);
-    }
-
-    dispatch(app, Scope::Entries, code, modifiers)
+pub(crate) fn handle_entries_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> Option<Action> {
+    crate::screens::entries::handle_key(app, code, mods)
 }
 
 pub(crate) fn handle_value_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> Option<Action> {

@@ -1,10 +1,10 @@
 use roforgecloud_core::auth;
 use roforgecloud_core::oauth::{self, OAuthClient};
-use roforgecloud_core::opencloud::datastore::DataStoreEntryInfo;
+
 use roforgecloud_core::opencloud::{ListQuery, OpenCloudClient};
 
 use crate::tree_editor::TreeEditor;
-use crate::userlookup;
+
 
 #[derive(Debug, Clone, Default)]
 pub struct TextField {
@@ -261,22 +261,7 @@ pub struct App {
 
     pub stores: crate::screens::stores::State,
 
-    pub http: reqwest::Client,
-    pub entries: Vec<DataStoreEntryInfo>,
-    pub usernames: std::collections::HashMap<u64, String>,
-    pub username_rx: tokio::sync::mpsc::UnboundedReceiver<std::collections::HashMap<u64, String>>,
-    pub username_tx: tokio::sync::mpsc::UnboundedSender<std::collections::HashMap<u64, String>>,
-    pub entries_selected: usize,
-    pub entries_next_page_token: Option<String>,
-    pub entries_page_tokens: Vec<Option<String>>,
-    pub entries_marked: std::collections::HashSet<usize>,
-    pub entries_search: TextField,
-    pub entries_search_active: bool,
-    pub entries_create_id: TextField,
-    pub entries_create_value: TextField,
-    pub entries_create_field: EntriesCreateField,
-    pub entries_create_active: bool,
-    pub entries_create_choosing: bool,
+    pub entries: crate::screens::entries::State,
     pub pending_confirm: Option<PendingConfirm>,
     pub confirm_deadline: Option<std::time::Instant>,
 
@@ -313,7 +298,6 @@ impl App {
         available_universes: Vec<u64>,
         logged_in: bool,
     ) -> Self {
-        let username_channel = tokio::sync::mpsc::unbounded_channel();
         let universe_name_channel = tokio::sync::mpsc::unbounded_channel();
 
         Self {
@@ -336,22 +320,7 @@ impl App {
             status: String::new(),
             menu: crate::screens::menu::State::new(),
             stores: crate::screens::stores::State::new(),
-            http: reqwest::Client::new(),
-            entries: Vec::new(),
-            usernames: std::collections::HashMap::new(),
-            username_rx: username_channel.1,
-            username_tx: username_channel.0,
-            entries_selected: 0,
-            entries_next_page_token: None,
-            entries_page_tokens: vec![None],
-            entries_marked: std::collections::HashSet::new(),
-            entries_search: TextField::default(),
-            entries_search_active: false,
-            entries_create_id: TextField::default(),
-            entries_create_value: TextField::default(),
-            entries_create_field: EntriesCreateField::Id,
-            entries_create_active: false,
-            entries_create_choosing: false,
+            entries: crate::screens::entries::State::new(),
             pending_confirm: None,
             confirm_deadline: None,
             value: crate::screens::value::State::new(),
@@ -629,28 +598,28 @@ impl App {
     }
 
     pub async fn load_entries(&mut self) {
-        self.entries_page_tokens = vec![None];
+        self.entries.page_tokens = vec![None];
         self.load_entries_page().await;
     }
 
     pub async fn load_next_entries_page(&mut self) {
-        let Some(token) = self.entries_next_page_token.clone() else {
+        let Some(token) = self.entries.next_page_token.clone() else {
             return;
         };
-        self.entries_page_tokens.push(Some(token));
+        self.entries.page_tokens.push(Some(token));
         self.load_entries_page().await;
     }
 
     pub async fn load_prev_entries_page(&mut self) {
-        if self.entries_page_tokens.len() <= 1 {
+        if self.entries.page_tokens.len() <= 1 {
             return;
         }
-        self.entries_page_tokens.pop();
+        self.entries.page_tokens.pop();
         self.load_entries_page().await;
     }
 
     pub async fn load_entries_page(&mut self) {
-        let page_token = self.entries_page_tokens.last().cloned().flatten();
+        let page_token = self.entries.page_tokens.last().cloned().flatten();
 
         self.status = "loading entries...".to_string();
         match self
@@ -668,12 +637,12 @@ impl App {
             .await
         {
             Ok(result) => {
-                self.entries = result.data_store_entries;
-                self.entries_selected = 0;
-                self.entries_marked.clear();
-                self.entries_next_page_token = result.next_page_token;
-                let page = self.entries_page_tokens.len();
-                self.status = format!("{} entries (page {page})", self.entries.len());
+                self.entries.items = result.data_store_entries;
+                self.entries.selected = 0;
+                self.entries.marked.clear();
+                self.entries.next_page_token = result.next_page_token;
+                let page = self.entries.page_tokens.len();
+                self.status = format!("{} entries (page {page})", self.entries.items.len());
                 self.resolve_entry_usernames();
             }
             Err(err) => {
@@ -714,12 +683,12 @@ impl App {
                 }
             }
         }
-        self.entries = all;
-        self.entries_selected = 0;
-        self.entries_marked.clear();
-        self.entries_next_page_token = None;
-        self.entries_page_tokens = vec![None];
-        self.status = format!("{} entries (search across whole store)", self.entries.len());
+        self.entries.items = all;
+        self.entries.selected = 0;
+        self.entries.marked.clear();
+        self.entries.next_page_token = None;
+        self.entries.page_tokens = vec![None];
+        self.status = format!("{} entries (search across whole store)", self.entries.items.len());
         self.resolve_entry_usernames();
     }
 
@@ -754,26 +723,7 @@ impl App {
         }
     }
 
-    fn resolve_entry_usernames(&mut self) {
-        let ids: Vec<u64> = self
-            .entries
-            .iter()
-            .filter_map(|entry| userlookup::extract_id(&entry.id))
-            .filter(|id| !self.usernames.contains_key(id))
-            .collect();
-
-        if ids.is_empty() {
-            return;
-        }
-
-        let client = self.http.clone();
-        let tx = self.username_tx.clone();
-        tokio::spawn(async move {
-            if let Ok(resolved) = userlookup::resolve_usernames(&client, &ids).await {
-                let _ = tx.send(resolved);
-            }
-        });
-    }
+    fn resolve_entry_usernames(&mut self) { self.entries.resolve_usernames(); }
 
     pub fn visible_universe_indices(&self) -> Vec<usize> {
         if self.universe_select.search.value.is_empty() {
@@ -811,7 +761,7 @@ impl App {
 
     pub fn needs_quit_confirm(&self) -> bool {
         !self.stores.marked.is_empty()
-            || !self.entries_marked.is_empty()
+            || !self.entries.marked.is_empty()
             || !self.ordered_entries.marked.is_empty()
             || !self.memory_entries.marked.is_empty()
     }
@@ -825,9 +775,9 @@ impl App {
             Screen::UniverseSelect => self.universe_select.search_active,
             Screen::Stores => self.stores.new_active,
             Screen::Entries => {
-                self.entries_search_active
-                    || self.entries_create_active
-                    || self.entries_create_choosing
+                self.entries.search_active
+                    || self.entries.create_active
+                    || self.entries.create_choosing
             }
             Screen::Value => {
                 self.tree_editor.as_ref().is_some_and(|t| t.is_editing())
@@ -858,59 +808,15 @@ impl App {
         }
     }
 
-    pub fn toggle_entry_mark(&mut self) {
-        if let Some(index) = self.current_entry_index() {
-            if !self.entries_marked.remove(&index) {
-                self.entries_marked.insert(index);
-            }
-        }
-    }
+    pub fn toggle_entry_mark(&mut self) { self.entries.toggle_mark(); }
 
-    pub fn toggle_select_all_visible(&mut self) {
-        let visible = self.visible_entry_indices();
-        if visible.iter().all(|i| self.entries_marked.contains(i)) {
-            for i in &visible {
-                self.entries_marked.remove(i);
-            }
-        } else {
-            self.entries_marked.extend(visible);
-        }
-    }
+    pub fn toggle_select_all_visible(&mut self) { self.entries.toggle_select_all_visible(); }
 
-    pub fn visible_entry_indices(&self) -> Vec<usize> {
-        if self.entries_search.value.is_empty() {
-            return (0..self.entries.len()).collect();
-        }
+    pub fn visible_entry_indices(&self) -> Vec<usize> { self.entries.visible_indices() }
 
-        let needle = self.entries_search.value.to_lowercase();
-        self.entries
-            .iter()
-            .enumerate()
-            .filter(|(_, entry)| {
-                if entry.id.to_lowercase().contains(&needle) {
-                    return true;
-                }
-                userlookup::extract_id(&entry.id)
-                    .and_then(|id| self.usernames.get(&id))
-                    .is_some_and(|name| name.to_lowercase().contains(&needle))
-            })
-            .map(|(i, _)| i)
-            .collect()
-    }
+    fn current_entry_index(&self) -> Option<usize> { self.entries.current_index() }
 
-    fn current_entry_index(&self) -> Option<usize> {
-        self.visible_entry_indices()
-            .get(self.entries_selected)
-            .copied()
-    }
-
-    fn current_entry_scope_key(&self) -> Option<(String, String)> {
-        let entry = self.entries.get(self.current_entry_index()?)?;
-        Some(match entry.id.split_once('/') {
-            Some((scope, key)) => (scope.to_string(), key.to_string()),
-            None => ("global".to_string(), entry.id.clone()),
-        })
-    }
+    fn current_entry_scope_key(&self) -> Option<(String, String)> { self.entries.current_scope_key() }
 
     pub async fn load_value(&mut self) {
         if self.value.source == ValueSource::MemoryStoreSortedMap {
@@ -949,7 +855,7 @@ impl App {
     pub fn enter_tree_mode_for(&mut self, target: TreeTarget) {
         let source = match target {
             TreeTarget::Value => self.value.text.clone(),
-            TreeTarget::EntriesCreate => self.entries_create_value.value.clone(),
+            TreeTarget::EntriesCreate => self.entries.create_value.value.clone(),
             TreeTarget::MemoryCreate => self.memory_entries.create_value.value.clone(),
         };
         let source = source.trim();
@@ -1001,7 +907,7 @@ impl App {
                 }
             }
             TreeTarget::EntriesCreate => {
-                self.entries_create_value.set(json);
+                self.entries.create_value.set(json);
                 self.exit_tree_mode();
             }
             TreeTarget::MemoryCreate => {
@@ -1103,7 +1009,7 @@ impl App {
     }
 
     pub async fn create_entry(&mut self) {
-        let id = self.entries_create_id.value.trim();
+        let id = self.entries.create_id.value.trim();
         if id.is_empty() {
             self.status = "entry id cannot be empty".to_string();
             return;
@@ -1113,7 +1019,7 @@ impl App {
             None => ("global".to_string(), id.to_string()),
         };
 
-        let value: serde_json::Value = match serde_json::from_str(&self.entries_create_value.value)
+        let value: serde_json::Value = match serde_json::from_str(&self.entries.create_value.value)
         {
             Ok(value) => value,
             Err(err) => {
@@ -1135,9 +1041,9 @@ impl App {
             .await
         {
             Ok(()) => {
-                self.entries_create_id.clear();
-                self.entries_create_value.clear();
-                self.entries_create_active = false;
+                self.entries.create_id.clear();
+                self.entries.create_value.clear();
+                self.entries.create_active = false;
                 self.status = "created".to_string();
                 self.load_entries_page().await;
             }
@@ -1162,10 +1068,10 @@ impl App {
             .await
         {
             Ok(()) => {
-                self.entries.remove(index);
+                self.entries.items.remove(index);
                 let visible = self.visible_entry_indices().len();
-                if self.entries_selected >= visible {
-                    self.entries_selected = visible.saturating_sub(1);
+                if self.entries.selected >= visible {
+                    self.entries.selected = visible.saturating_sub(1);
                 }
                 if self.screen == Screen::Value {
                     self.exit_tree_mode();
@@ -1180,13 +1086,13 @@ impl App {
     }
 
     pub async fn bulk_delete_entries(&mut self) {
-        let mut indices: Vec<usize> = self.entries_marked.iter().copied().collect();
+        let mut indices: Vec<usize> = self.entries.marked.iter().copied().collect();
         indices.sort_unstable();
 
         let targets: Vec<(usize, String, String)> = indices
             .into_iter()
             .map(|i| {
-                let entry = &self.entries[i];
+                let entry = &self.entries.items[i];
                 let (scope, key) = match entry.id.split_once('/') {
                     Some((scope, key)) => (scope.to_string(), key.to_string()),
                     None => ("global".to_string(), entry.id.clone()),
@@ -1217,14 +1123,14 @@ impl App {
         }
 
         for &i in deleted_indices.iter().rev() {
-            self.entries.remove(i);
+            self.entries.items.remove(i);
         }
 
-        self.entries_marked.clear();
+        self.entries.marked.clear();
 
         let visible = self.visible_entry_indices().len();
-        if self.entries_selected >= visible {
-            self.entries_selected = visible.saturating_sub(1);
+        if self.entries.selected >= visible {
+            self.entries.selected = visible.saturating_sub(1);
         }
 
         self.status = if errors == 0 {

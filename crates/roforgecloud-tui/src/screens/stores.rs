@@ -170,7 +170,7 @@ fn open(app: &mut App) -> Option<Action> {
         return None;
     }
     app.stores.data_store_id = store.id.clone();
-    app.entries_next_page_token = None;
+    app.entries.next_page_token = None;
     app.screen = Screen::Entries;
     Some(Action::LoadEntries)
 }
@@ -209,16 +209,16 @@ fn handle_new_key(app: &mut App, code: KeyCode) -> Option<Action> {
             }
             app.stores.new_active = false;
             app.stores.data_store_id = id;
-            app.entries.clear();
-            app.entries_selected = 0;
-            app.entries_next_page_token = None;
-            app.entries_page_tokens = vec![None];
-            app.entries_marked.clear();
-            app.entries_search.clear();
-            app.entries_create_id.clear();
-            app.entries_create_value.clear();
-            app.entries_create_field = crate::app::EntriesCreateField::Id;
-            app.entries_create_active = true;
+            app.entries.items.clear();
+            app.entries.selected = 0;
+            app.entries.next_page_token = None;
+            app.entries.page_tokens = vec![None];
+            app.entries.marked.clear();
+            app.entries.search.clear();
+            app.entries.create_id.clear();
+            app.entries.create_value.clear();
+            app.entries.create_field = crate::app::EntriesCreateField::Id;
+            app.entries.create_active = true;
             app.status.clear();
             app.screen = Screen::Entries;
             None

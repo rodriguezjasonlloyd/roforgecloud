@@ -75,103 +75,7 @@ pub(crate) fn draw_stores(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 pub(crate) fn draw_entries(frame: &mut Frame, app: &App, area: Rect) {
-    let visible = app.visible_entry_indices();
-
-    let items: Vec<ListItem> = visible
-        .iter()
-        .map(|&i| {
-            let entry = &app.entries[i];
-            let mut spans = Vec::new();
-            if !app.entries_marked.is_empty() {
-                let marker = if app.entries_marked.contains(&i) {
-                    "[x] "
-                } else {
-                    "[ ] "
-                };
-                spans.push(Span::raw(marker));
-            }
-            spans.push(Span::raw(entry.id.clone()));
-            if let Some(username) =
-                crate::userlookup::extract_id(&entry.id).and_then(|id| app.usernames.get(&id))
-            {
-                spans.push(Span::styled(
-                    format!("  ({username})"),
-                    Style::default().fg(Color::DarkGray),
-                ));
-            }
-            ListItem::new(Line::from(spans))
-        })
-        .collect();
-
-    let store_label = match app.universe_names.get(&app.universe_id) {
-        Some(name) => format!(
-            "{} (universe {} ({name}))",
-            app.stores.data_store_id, app.universe_id
-        ),
-        None => app.stores.data_store_id.clone(),
-    };
-    let title = if app.entries_search.value.is_empty() {
-        if app.entries_marked.is_empty() {
-            store_label
-        } else {
-            format!("{store_label} ({} selected)", app.entries_marked.len())
-        }
-    } else if app.entries_marked.is_empty() {
-        format!("{store_label} (search: {})", app.entries_search.value)
-    } else {
-        format!(
-            "{store_label} (search: {}, {} selected)",
-            app.entries_search.value,
-            app.entries_marked.len()
-        )
-    };
-
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title(title))
-        .highlight_style(HIGHLIGHT_STYLE);
-
-    let mut state = ListState::default();
-    if !visible.is_empty() {
-        state.select(Some(app.entries_selected));
-    }
-    frame.render_stateful_widget(list, area, &mut state);
-
-    if app.entries_create_active {
-        draw_entries_create_popup(frame, app, area);
-    }
-}
-
-fn draw_entries_create_popup(frame: &mut Frame, app: &App, area: Rect) {
-    if app.tree_editor.is_some() && app.tree_target == TreeTarget::EntriesCreate {
-        let popup = centered_rect(80, 80, area);
-        frame.render_widget(Clear, popup);
-        draw_tree(frame, app, popup);
-        return;
-    }
-
-    let id_active = app.entries_create_field == EntriesCreateField::Id;
-    let value_active = app.entries_create_field == EntriesCreateField::Value;
-    let max_lines = 6;
-
-    let popup = centered_rect_lines(50, max_lines + 2 + 3 + 2, area);
-    frame.render_widget(Clear, popup);
-    let block = Block::default().borders(Borders::ALL).title("Create Entry");
-    let inner = block.inner(popup);
-    frame.render_widget(block, popup);
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(0)])
-        .split(inner);
-
-    field_box(frame, rows[0], "Id", &app.entries_create_id, id_active);
-    field_paragraph_box(
-        frame,
-        rows[1],
-        "Value (JSON)",
-        &app.entries_create_value,
-        value_active,
-    );
+    crate::screens::entries::draw(frame, app, area);
 }
 
 pub(crate) fn draw_value(frame: &mut Frame, app: &App, area: Rect) {
@@ -339,7 +243,7 @@ fn screen_binds(app: &App) -> String {
         Screen::UniverseInput => InputHint::UniverseInput.to_string(),
         Screen::Stores if app.stores.new_active => InputHint::StoreInput.to_string(),
         Screen::Stores => join_hints(&[MOVE, &hint_bar_entries(app, Scope::Stores), BACK_QUIT]),
-        Screen::Entries if app.entries_search_active => {
+        Screen::Entries if app.entries.search_active => {
             InputHint::SearchByIdOrUsername.to_string()
         }
         Screen::Entries if app.tree_editor.as_ref().is_some_and(|t| t.is_editing()) => {
@@ -348,8 +252,8 @@ fn screen_binds(app: &App) -> String {
         Screen::Entries if app.tree_editor.is_some() => {
             join_hints(&[MOVE, &hint_bar_entries(app, Scope::Tree)])
         }
-        Screen::Entries if app.entries_create_choosing => InputHint::CreateChoosing.to_string(),
-        Screen::Entries if app.entries_create_active => crate::update::entries_create_hints(app),
+        Screen::Entries if app.entries.create_choosing => InputHint::CreateChoosing.to_string(),
+        Screen::Entries if app.entries.create_active => crate::update::entries_create_hints(app),
         Screen::Entries => join_hints(&[MOVE, &hint_bar_entries(app, Scope::Entries), BACK_QUIT]),
         Screen::Value if app.tree_editor.as_ref().is_some_and(|t| t.is_editing()) => {
             InputHint::EditText.to_string()
