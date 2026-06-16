@@ -7,7 +7,7 @@ use ratatui::Frame;
 use ratatui_which_key::Keymap;
 
 use crate::app::{Action, App, Screen, TextField, TextFieldExt};
-use crate::ui::{HIGHLIGHT_STYLE, breadcrumb};
+use crate::ui::{breadcrumb, HIGHLIGHT_STYLE};
 use crate::update::{self, Act, Category, Scope};
 
 pub(crate) struct State {
@@ -29,7 +29,15 @@ impl State {
 pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
     update::bind_list_nav(km, Scope::UniverseSelect);
     update::bind_quit(km, Scope::UniverseSelect);
-    update::bind(km, KeyCode::Char('h'), Act { desc: "back", handler: back }, Scope::UniverseSelect);
+    update::bind(
+        km,
+        KeyCode::Char('h'),
+        Act {
+            desc: "back",
+            handler: back,
+        },
+        Scope::UniverseSelect,
+    );
     update::bind(
         km,
         KeyCode::Char('/'),
@@ -42,7 +50,15 @@ pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
         },
         Scope::UniverseSelect,
     );
-    update::bind(km, KeyCode::Char('l'), Act { desc: "select", handler: choose }, Scope::UniverseSelect);
+    update::bind(
+        km,
+        KeyCode::Char('l'),
+        Act {
+            desc: "select",
+            handler: choose,
+        },
+        Scope::UniverseSelect,
+    );
 }
 
 pub(crate) fn handle_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> Option<Action> {
@@ -63,7 +79,8 @@ pub(crate) fn handle_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> O
 
     let visible_len = app.visible_universe_indices().len();
 
-    if let Some(result) = update::list_nav_key(code, &mut app.universe_select.selected, visible_len) {
+    if let Some(result) = update::list_nav_key(code, &mut app.universe_select.selected, visible_len)
+    {
         return result;
     }
 

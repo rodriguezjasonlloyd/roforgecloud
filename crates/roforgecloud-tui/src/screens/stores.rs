@@ -9,9 +9,14 @@ use ratatui::Frame;
 use ratatui_which_key::Keymap;
 use roforgecloud_core::opencloud::datastore::DataStoreInfo;
 
-use crate::app::{Action, App, EntriesCreateField, PendingConfirm, Screen, TextField, TextFieldExt};
-use crate::update::{Act, Category, Scope, bind, bind_list_nav, bind_quit, dispatch, handle_pending_confirm, handle_text_field_key, list_nav_key};
-use crate::ui::{HIGHLIGHT_STYLE, breadcrumb, centered_rect_lines, field_box, universe_label};
+use crate::app::{
+    Action, App, EntriesCreateField, PendingConfirm, Screen, TextField, TextFieldExt,
+};
+use crate::ui::{breadcrumb, centered_rect_lines, field_box, universe_label, HIGHLIGHT_STYLE};
+use crate::update::{
+    bind, bind_list_nav, bind_quit, dispatch, handle_pending_confirm, handle_text_field_key,
+    list_nav_key, Act, Category, Scope,
+};
 
 pub(crate) struct State {
     pub items: Vec<DataStoreInfo>,
@@ -55,21 +60,61 @@ impl State {
 pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
     bind_list_nav(km, Scope::Stores);
     bind_quit(km, Scope::Stores);
-    bind(km, KeyCode::Char('h'), Act { desc: "back", handler: |app| { app.screen = Screen::UniverseChoice; app.status.clear(); None } }, Scope::Stores);
-    bind(km, KeyCode::Char('l'), Act { desc: "open", handler: open }, Scope::Stores);
+    bind(
+        km,
+        KeyCode::Char('h'),
+        Act {
+            desc: "back",
+            handler: |app| {
+                app.screen = Screen::UniverseChoice;
+                app.status.clear();
+                None
+            },
+        },
+        Scope::Stores,
+    );
+    bind(
+        km,
+        KeyCode::Char('l'),
+        Act {
+            desc: "open",
+            handler: open,
+        },
+        Scope::Stores,
+    );
     bind(
         km,
         KeyCode::Char(' '),
-        Act { desc: "select", handler: |app| { app.stores.toggle_mark(); None } },
+        Act {
+            desc: "select",
+            handler: |app| {
+                app.stores.toggle_mark();
+                None
+            },
+        },
         Scope::Stores,
     );
     bind(
         km,
         KeyCode::Char('a'),
-        Act { desc: "select all", handler: |app| { app.stores.toggle_select_all(); None } },
+        Act {
+            desc: "select all",
+            handler: |app| {
+                app.stores.toggle_select_all();
+                None
+            },
+        },
         Scope::Stores,
     );
-    bind(km, KeyCode::Char('r'), Act { desc: "refresh", handler: |_| Some(Action::LoadStores) }, Scope::Stores);
+    bind(
+        km,
+        KeyCode::Char('r'),
+        Act {
+            desc: "refresh",
+            handler: |_| Some(Action::LoadStores),
+        },
+        Scope::Stores,
+    );
     bind(
         km,
         KeyCode::Char('c'),
@@ -83,8 +128,24 @@ pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
         },
         Scope::Stores,
     );
-    bind(km, KeyCode::Char('d'), Act { desc: "delete", handler: delete }, Scope::Stores);
-    bind(km, KeyCode::Char('u'), Act { desc: "undelete", handler: undelete }, Scope::Stores);
+    bind(
+        km,
+        KeyCode::Char('d'),
+        Act {
+            desc: "delete",
+            handler: delete,
+        },
+        Scope::Stores,
+    );
+    bind(
+        km,
+        KeyCode::Char('u'),
+        Act {
+            desc: "undelete",
+            handler: undelete,
+        },
+        Scope::Stores,
+    );
 }
 
 pub(crate) fn handle_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> Option<Action> {
@@ -112,19 +173,27 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
         .map(|(i, store)| {
             let mut spans = Vec::new();
             if !app.stores.marked.is_empty() {
-                let marker = if app.stores.marked.contains(&i) { "[x] " } else { "[ ] " };
+                let marker = if app.stores.marked.contains(&i) {
+                    "[x] "
+                } else {
+                    "[ ] "
+                };
                 spans.push(Span::raw(marker));
             }
             spans.push(Span::raw(store.id.clone()));
             if store.state.as_deref().is_some_and(|s| s != "ACTIVE") {
-                spans.push(Span::styled("  [SCHEDULED DELETION]", Style::default().fg(Color::DarkGray)));
+                spans.push(Span::styled(
+                    "  [SCHEDULED DELETION]",
+                    Style::default().fg(Color::DarkGray),
+                ));
             }
             ListItem::new(Line::from(spans))
         })
         .collect();
 
     let uni = universe_label(app);
-    let suffix = (!app.stores.marked.is_empty()).then(|| format!("{} selected", app.stores.marked.len()));
+    let suffix =
+        (!app.stores.marked.is_empty()).then(|| format!("{} selected", app.stores.marked.len()));
     let title = breadcrumb(&[uni.as_str(), "data stores"], suffix.as_deref());
 
     let list = List::new(items)
@@ -145,7 +214,9 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
 fn draw_new_popup(frame: &mut Frame, app: &App, area: Rect) {
     let popup = centered_rect_lines(50, 5, area);
     frame.render_widget(Clear, popup);
-    let block = Block::default().borders(Borders::ALL).title("Create entry in new store");
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title("Create entry in new store");
     let inner = block.inner(popup);
     frame.render_widget(block, popup);
     field_box(frame, inner, "Data Store ID", &app.stores.new_id, true);

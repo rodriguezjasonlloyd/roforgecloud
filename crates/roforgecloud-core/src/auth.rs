@@ -169,9 +169,7 @@ async fn login(
     Ok(token)
 }
 
-async fn handle_callback(
-    stream: &mut tokio::net::TcpStream,
-) -> Result<Option<(String, String)>> {
+async fn handle_callback(stream: &mut tokio::net::TcpStream) -> Result<Option<(String, String)>> {
     let mut reader = BufReader::new(&mut *stream);
     let mut request_line = String::new();
     reader.read_line(&mut request_line).await?;

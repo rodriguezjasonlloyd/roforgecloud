@@ -97,9 +97,16 @@ pub(crate) fn draw_tree(frame: &mut Frame, app: &App, area: Rect) {
             }
 
             if i == editor.cursor() && editor.editing() {
-                edit_value_prefix_col = spans.iter().map(|s| s.content.chars().count()).sum::<usize>() as u16;
+                edit_value_prefix_col = spans
+                    .iter()
+                    .map(|s| s.content.chars().count())
+                    .sum::<usize>() as u16;
             } else {
-                let style = row.scalar_kind.as_ref().map(scalar_style).unwrap_or_default();
+                let style = row
+                    .scalar_kind
+                    .as_ref()
+                    .map(scalar_style)
+                    .unwrap_or_default();
                 spans.push(Span::styled(row.preview.clone(), style));
             }
 
@@ -116,18 +123,26 @@ pub(crate) fn draw_tree(frame: &mut Frame, app: &App, area: Rect) {
             use crate::app::ValueSource;
             match app.value.source {
                 ValueSource::DataStore => breadcrumb(
-                    &[uni.as_str(), "data stores", &app.stores.data_store_id, &app.value.title],
+                    &[
+                        uni.as_str(),
+                        "data stores",
+                        &app.stores.data_store_id,
+                        &app.value.title,
+                    ],
                     Some(mode),
                 ),
                 ValueSource::MemoryStoreSortedMap => breadcrumb(
-                    &[uni.as_str(), "memory stores", &app.memory_store_input.id, &app.memory_item_editing_id],
+                    &[
+                        uni.as_str(),
+                        "memory stores",
+                        &app.memory_store_input.id,
+                        &app.memory_item_editing_id,
+                    ],
                     Some(mode),
                 ),
             }
         }
-        TreeTarget::EntriesCreate | TreeTarget::MemoryCreate => {
-            breadcrumb(&["value"], Some(mode))
-        }
+        TreeTarget::EntriesCreate | TreeTarget::MemoryCreate => breadcrumb(&["value"], Some(mode)),
     };
 
     let list = List::new(items)
@@ -190,8 +205,13 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(paragraph, area);
 }
 
-
-pub(crate) fn field_box(frame: &mut Frame, area: Rect, title: &str, field: &tui_textarea::TextArea<'static>, active: bool) {
+pub(crate) fn field_box(
+    frame: &mut Frame,
+    area: Rect,
+    title: &str,
+    field: &tui_textarea::TextArea<'static>,
+    active: bool,
+) {
     let block = Block::default()
         .borders(Borders::ALL)
         .title(title.to_string());

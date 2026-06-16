@@ -5,9 +5,12 @@ use ratatui::Frame;
 use ratatui_which_key::Keymap;
 
 use crate::app::{Action, App, PendingConfirm, Screen, TextFieldExt, ValueSource};
-use crate::update::{Act, Category, Scope, bind, bind_quit, dispatch, handle_pending_confirm, handle_text_field_key, handle_tree_key};
 use crate::json_highlight;
 use crate::ui::{breadcrumb, draw_tree, universe_label};
+use crate::update::{
+    bind, bind_quit, dispatch, handle_pending_confirm, handle_text_field_key, handle_tree_key, Act,
+    Category, Scope,
+};
 
 pub(crate) struct State {
     pub title: String,
@@ -45,44 +48,146 @@ impl State {
 pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
     for scope in [Scope::DataStoreValue, Scope::MemoryStoreValue] {
         bind_quit(km, scope);
-        bind(km, KeyCode::Char('h'), Act { desc: "back", handler: |app| {
-            app.screen = match app.value.source {
-                ValueSource::DataStore => Screen::Entries,
-                ValueSource::MemoryStoreSortedMap => Screen::MemoryStoreEntries,
-            };
-            app.status.clear();
-            None
-        }}, scope);
-        bind(km, KeyCode::Char('r'), Act { desc: "refresh", handler: |_| Some(Action::LoadValue) }, scope);
+        bind(
+            km,
+            KeyCode::Char('h'),
+            Act {
+                desc: "back",
+                handler: |app| {
+                    app.screen = match app.value.source {
+                        ValueSource::DataStore => Screen::Entries,
+                        ValueSource::MemoryStoreSortedMap => Screen::MemoryStoreEntries,
+                    };
+                    app.status.clear();
+                    None
+                },
+            },
+            scope,
+        );
+        bind(
+            km,
+            KeyCode::Char('r'),
+            Act {
+                desc: "refresh",
+                handler: |_| Some(Action::LoadValue),
+            },
+            scope,
+        );
         km.describe_group_for_scope("e", "edit", scope);
-        km.bind("et", Act { desc: "tree edit", handler: |app| { app.enter_tree_mode(); None } }, Category::General, scope);
-        km.bind("ee", Act { desc: "edit in $EDITOR", handler: |_| Some(Action::EditValueExternal) }, Category::General, scope);
-        bind(km, KeyCode::Char('d'), Act {
-            desc: "delete",
+        km.bind(
+            "et",
+            Act {
+                desc: "tree edit",
+                handler: |app| {
+                    app.enter_tree_mode();
+                    None
+                },
+            },
+            Category::General,
+            scope,
+        );
+        km.bind(
+            "ee",
+            Act {
+                desc: "edit in $EDITOR",
+                handler: |_| Some(Action::EditValueExternal),
+            },
+            Category::General,
+            scope,
+        );
+        bind(
+            km,
+            KeyCode::Char('d'),
+            Act {
+                desc: "delete",
+                handler: |app| {
+                    let pending = match app.value.source {
+                        ValueSource::DataStore => PendingConfirm::DeleteEntry,
+                        ValueSource::MemoryStoreSortedMap => PendingConfirm::DeleteMemoryItem,
+                    };
+                    app.arm_confirm(pending);
+                    None
+                },
+            },
+            scope,
+        );
+        bind(
+            km,
+            KeyCode::Up,
+            Act {
+                desc: "scroll up",
+                handler: scroll_up,
+            },
+            scope,
+        );
+        bind(
+            km,
+            KeyCode::Char('k'),
+            Act {
+                desc: "scroll up",
+                handler: scroll_up,
+            },
+            scope,
+        );
+        bind(
+            km,
+            KeyCode::Down,
+            Act {
+                desc: "scroll down",
+                handler: scroll_down,
+            },
+            scope,
+        );
+        bind(
+            km,
+            KeyCode::Char('j'),
+            Act {
+                desc: "scroll down",
+                handler: scroll_down,
+            },
+            scope,
+        );
+        bind(
+            km,
+            KeyCode::PageUp,
+            Act {
+                desc: "scroll up x10",
+                handler: |app| {
+                    app.value.scroll = app.value.scroll.saturating_sub(10);
+                    None
+                },
+            },
+            scope,
+        );
+        bind(
+            km,
+            KeyCode::PageDown,
+            Act {
+                desc: "scroll down x10",
+                handler: |app| {
+                    let max = app.value.max_scroll();
+                    app.value.scroll = (app.value.scroll + 10).min(max);
+                    None
+                },
+            },
+            scope,
+        );
+    }
+    bind(
+        km,
+        KeyCode::Char('t'),
+        Act {
+            desc: "edit ttl",
             handler: |app| {
-                let pending = match app.value.source {
-                    ValueSource::DataStore => PendingConfirm::DeleteEntry,
-                    ValueSource::MemoryStoreSortedMap => PendingConfirm::DeleteMemoryItem,
-                };
-                app.arm_confirm(pending);
+                app.memory_entries
+                    .ttl_edit
+                    .set_value(app.memory_item_ttl_seconds.to_string());
+                app.memory_entries.ttl_editing = true;
                 None
             },
-        }, scope);
-        bind(km, KeyCode::Up, Act { desc: "scroll up", handler: scroll_up }, scope);
-        bind(km, KeyCode::Char('k'), Act { desc: "scroll up", handler: scroll_up }, scope);
-        bind(km, KeyCode::Down, Act { desc: "scroll down", handler: scroll_down }, scope);
-        bind(km, KeyCode::Char('j'), Act { desc: "scroll down", handler: scroll_down }, scope);
-        bind(km, KeyCode::PageUp, Act { desc: "scroll up x10", handler: |app| { app.value.scroll = app.value.scroll.saturating_sub(10); None } }, scope);
-        bind(km, KeyCode::PageDown, Act { desc: "scroll down x10", handler: |app| { let max = app.value.max_scroll(); app.value.scroll = (app.value.scroll + 10).min(max); None } }, scope);
-    }
-    bind(km, KeyCode::Char('t'), Act {
-        desc: "edit ttl",
-        handler: |app| {
-            app.memory_entries.ttl_edit.set_value(app.memory_item_ttl_seconds.to_string());
-            app.memory_entries.ttl_editing = true;
-            None
         },
-    }, Scope::MemoryStoreValue);
+        Scope::MemoryStoreValue,
+    );
 }
 
 pub(crate) fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
@@ -99,7 +204,9 @@ pub(crate) fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) 
                 None
             }
             _ => {
-                handle_text_field_key(&mut app.memory_entries.ttl_edit, code, |c| c.is_ascii_digit());
+                handle_text_field_key(&mut app.memory_entries.ttl_edit, code, |c| {
+                    c.is_ascii_digit()
+                });
                 None
             }
         };
@@ -124,12 +231,36 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
     let uni = universe_label(app);
     let title = match app.value.source {
         ValueSource::DataStore => {
-            let suffix = if app.value.scope.is_empty() { None } else { Some(app.value.scope.as_str()) };
-            breadcrumb(&[uni.as_str(), "data stores", &app.stores.data_store_id, &app.value.title], suffix)
+            let suffix = if app.value.scope.is_empty() {
+                None
+            } else {
+                Some(app.value.scope.as_str())
+            };
+            breadcrumb(
+                &[
+                    uni.as_str(),
+                    "data stores",
+                    &app.stores.data_store_id,
+                    &app.value.title,
+                ],
+                suffix,
+            )
         }
         ValueSource::MemoryStoreSortedMap => {
-            let suffix = if app.value.expire.is_empty() { None } else { Some(app.value.expire.as_str()) };
-            breadcrumb(&[uni.as_str(), "memory stores", &app.memory_store_input.id, &app.memory_item_editing_id], suffix)
+            let suffix = if app.value.expire.is_empty() {
+                None
+            } else {
+                Some(app.value.expire.as_str())
+            };
+            breadcrumb(
+                &[
+                    uni.as_str(),
+                    "memory stores",
+                    &app.memory_store_input.id,
+                    &app.memory_item_editing_id,
+                ],
+                suffix,
+            )
         }
     };
 

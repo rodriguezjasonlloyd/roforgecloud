@@ -8,10 +8,18 @@ use ratatui::Frame;
 use ratatui_which_key::Keymap;
 use roforgecloud_core::opencloud::ordered_datastore::OrderedDataStoreEntry;
 
-use crate::app::{Action, App, OrderedCreateField, PendingConfirm, Screen, TextField, TextFieldExt};
+use crate::app::{
+    Action, App, OrderedCreateField, PendingConfirm, Screen, TextField, TextFieldExt,
+};
 use crate::status;
-use crate::update::{self, Act, Category, Scope, bind, bind_list_nav, bind_quit, dispatch, handle_pending_confirm, handle_text_field_key, list_nav_key};
-use crate::ui::{HIGHLIGHT_STYLE, breadcrumb, centered_rect_lines, field_box, field_paragraph_box, universe_label};
+use crate::ui::{
+    breadcrumb, centered_rect_lines, field_box, field_paragraph_box, universe_label,
+    HIGHLIGHT_STYLE,
+};
+use crate::update::{
+    self, bind, bind_list_nav, bind_quit, dispatch, handle_pending_confirm, handle_text_field_key,
+    list_nav_key, Act, Category, Scope,
+};
 
 pub(crate) struct State {
     pub items: Vec<OrderedDataStoreEntry>,
@@ -86,10 +94,42 @@ impl State {
 pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
     bind_list_nav(km, Scope::OrderedEntries);
     bind_quit(km, Scope::OrderedEntries);
-    bind(km, KeyCode::Char('h'), Act { desc: "back", handler: back }, Scope::OrderedEntries);
-    bind(km, KeyCode::Char('n'), Act { desc: "next page", handler: |_| Some(Action::LoadNextOrderedEntriesPage) }, Scope::OrderedEntries);
-    bind(km, KeyCode::Char('p'), Act { desc: "prev page", handler: |_| Some(Action::LoadPrevOrderedEntriesPage) }, Scope::OrderedEntries);
-    bind(km, KeyCode::Char('r'), Act { desc: "refresh", handler: |_| Some(Action::RefreshOrderedEntries) }, Scope::OrderedEntries);
+    bind(
+        km,
+        KeyCode::Char('h'),
+        Act {
+            desc: "back",
+            handler: back,
+        },
+        Scope::OrderedEntries,
+    );
+    bind(
+        km,
+        KeyCode::Char('n'),
+        Act {
+            desc: "next page",
+            handler: |_| Some(Action::LoadNextOrderedEntriesPage),
+        },
+        Scope::OrderedEntries,
+    );
+    bind(
+        km,
+        KeyCode::Char('p'),
+        Act {
+            desc: "prev page",
+            handler: |_| Some(Action::LoadPrevOrderedEntriesPage),
+        },
+        Scope::OrderedEntries,
+    );
+    bind(
+        km,
+        KeyCode::Char('r'),
+        Act {
+            desc: "refresh",
+            handler: |_| Some(Action::RefreshOrderedEntries),
+        },
+        Scope::OrderedEntries,
+    );
     bind(
         km,
         KeyCode::Char('/'),
@@ -106,23 +146,57 @@ pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
     bind(
         km,
         KeyCode::Char('c'),
-        Act { desc: "create", handler: |app| { app.ordered_entries.create_choosing = true; None } },
+        Act {
+            desc: "create",
+            handler: |app| {
+                app.ordered_entries.create_choosing = true;
+                None
+            },
+        },
         Scope::OrderedEntries,
     );
     bind(
         km,
         KeyCode::Char(' '),
-        Act { desc: "select", handler: |app| { app.ordered_entries.toggle_mark(); None } },
+        Act {
+            desc: "select",
+            handler: |app| {
+                app.ordered_entries.toggle_mark();
+                None
+            },
+        },
         Scope::OrderedEntries,
     );
     bind(
         km,
         KeyCode::Char('a'),
-        Act { desc: "select all", handler: |app| { app.ordered_entries.toggle_select_all_visible(); None } },
+        Act {
+            desc: "select all",
+            handler: |app| {
+                app.ordered_entries.toggle_select_all_visible();
+                None
+            },
+        },
         Scope::OrderedEntries,
     );
-    bind(km, KeyCode::Char('d'), Act { desc: "delete", handler: delete }, Scope::OrderedEntries);
-    bind(km, KeyCode::Char('l'), Act { desc: "view", handler: view }, Scope::OrderedEntries);
+    bind(
+        km,
+        KeyCode::Char('d'),
+        Act {
+            desc: "delete",
+            handler: delete,
+        },
+        Scope::OrderedEntries,
+    );
+    bind(
+        km,
+        KeyCode::Char('l'),
+        Act {
+            desc: "view",
+            handler: view,
+        },
+        Scope::OrderedEntries,
+    );
 }
 
 pub(crate) fn handle_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> Option<Action> {
@@ -183,7 +257,11 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
             let entry = &app.ordered_entries.items[i];
             let mut spans = Vec::new();
             if !app.ordered_entries.marked.is_empty() {
-                let marker = if app.ordered_entries.marked.contains(&i) { "[x] " } else { "[ ] " };
+                let marker = if app.ordered_entries.marked.contains(&i) {
+                    "[x] "
+                } else {
+                    "[ ] "
+                };
                 spans.push(Span::raw(marker));
             }
             spans.push(Span::raw(format!("{}  =  {}", entry.id, entry.value)));
@@ -197,12 +275,15 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
     let n = app.ordered_entries.marked.len();
     let scope_suffix = format!("scope: {}", app.ordered_store_input.scope.get_value());
     let state_part = match (!q.is_empty(), n > 0) {
-        (true, true)  => Some(format!("{scope_suffix}  ·  search: {q}  ·  {n} selected")),
+        (true, true) => Some(format!("{scope_suffix}  ·  search: {q}  ·  {n} selected")),
         (true, false) => Some(format!("{scope_suffix}  ·  search: {q}")),
         (false, true) => Some(format!("{scope_suffix}  ·  {n} selected")),
         (false, false) => Some(scope_suffix),
     };
-    let title = breadcrumb(&[uni.as_str(), "ordered data stores", store.as_str()], state_part.as_deref());
+    let title = breadcrumb(
+        &[uni.as_str(), "ordered data stores", store.as_str()],
+        state_part.as_deref(),
+    );
 
     let list = List::new(items)
         .block(Block::default().borders(Borders::ALL).title(title))
@@ -235,8 +316,20 @@ fn draw_create_popup(frame: &mut Frame, app: &App, area: Rect) {
         .constraints([Constraint::Length(3), Constraint::Min(0)])
         .split(inner);
 
-    field_box(frame, rows[0], "Id", &app.ordered_entries.create_id, id_active);
-    field_paragraph_box(frame, rows[1], "Value", &app.ordered_entries.create_value, value_active);
+    field_box(
+        frame,
+        rows[0],
+        "Id",
+        &app.ordered_entries.create_id,
+        id_active,
+    );
+    field_paragraph_box(
+        frame,
+        rows[1],
+        "Value",
+        &app.ordered_entries.create_value,
+        value_active,
+    );
 }
 
 fn delete(app: &mut App) -> Option<Action> {

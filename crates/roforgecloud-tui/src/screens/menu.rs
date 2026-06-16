@@ -4,7 +4,10 @@ use ratatui::widgets::{Block, Borders, List, ListItem, ListState};
 use ratatui::Frame;
 use ratatui_which_key::Keymap;
 
-use crate::app::{Action, App, Screen, SERVICE_ACCOUNT, SERVICE_DATA_STORES, SERVICE_MEMORY_STORES, SERVICE_MESSAGING, SERVICE_ORDERED_DATA_STORES};
+use crate::app::{
+    Action, App, Screen, SERVICE_ACCOUNT, SERVICE_DATA_STORES, SERVICE_MEMORY_STORES,
+    SERVICE_MESSAGING, SERVICE_ORDERED_DATA_STORES,
+};
 use crate::ui::HIGHLIGHT_STYLE;
 use crate::update::{self, Act, Category, Scope};
 
@@ -33,7 +36,15 @@ impl State {
 pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
     update::bind_list_nav(km, Scope::Menu);
     update::bind_quit(km, Scope::Menu);
-    update::bind(km, KeyCode::Char('l'), Act { desc: "open", handler: open }, Scope::Menu);
+    update::bind(
+        km,
+        KeyCode::Char('l'),
+        Act {
+            desc: "open",
+            handler: open,
+        },
+        Scope::Menu,
+    );
 }
 
 pub(crate) fn handle_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> Option<Action> {

@@ -23,12 +23,36 @@ impl State {
 pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
     update::bind_list_nav(km, Scope::UniverseChoice);
     update::bind_quit(km, Scope::UniverseChoice);
-    update::bind(km, KeyCode::Char('h'), Act { desc: "back", handler: |app| { app.screen = Screen::Menu; app.status.clear(); None } }, Scope::UniverseChoice);
-    update::bind(km, KeyCode::Char('l'), Act { desc: "select", handler: select }, Scope::UniverseChoice);
+    update::bind(
+        km,
+        KeyCode::Char('h'),
+        Act {
+            desc: "back",
+            handler: |app| {
+                app.screen = Screen::Menu;
+                app.status.clear();
+                None
+            },
+        },
+        Scope::UniverseChoice,
+    );
+    update::bind(
+        km,
+        KeyCode::Char('l'),
+        Act {
+            desc: "select",
+            handler: select,
+        },
+        Scope::UniverseChoice,
+    );
 }
 
 pub(crate) fn handle_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> Option<Action> {
-    if let Some(result) = update::list_nav_key(code, &mut app.universe_choice.selected, UNIVERSE_CHOICE_ITEMS.len()) {
+    if let Some(result) = update::list_nav_key(
+        code,
+        &mut app.universe_choice.selected,
+        UNIVERSE_CHOICE_ITEMS.len(),
+    ) {
         return result;
     }
     update::dispatch(app, Scope::UniverseChoice, code, KeyModifiers::empty())

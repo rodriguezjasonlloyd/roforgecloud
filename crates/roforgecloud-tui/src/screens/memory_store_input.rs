@@ -66,5 +66,11 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
         .constraints([Constraint::Length(3), Constraint::Min(0)])
         .split(inner);
 
-    ui::field_box(frame, rows[0], "Sorted Map Name", &app.memory_store_input.input, true);
+    ui::field_box(
+        frame,
+        rows[0],
+        "Sorted Map Name",
+        &app.memory_store_input.input,
+        true,
+    );
 }

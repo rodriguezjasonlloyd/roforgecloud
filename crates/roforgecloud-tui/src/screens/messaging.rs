@@ -72,5 +72,11 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
     let message_active = app.messaging.field == MessagingField::Message;
 
     ui::field_box(frame, rows[0], "Topic", &app.messaging.topic, topic_active);
-    ui::field_paragraph_box(frame, rows[1], "Message", &app.messaging.message, message_active);
+    ui::field_paragraph_box(
+        frame,
+        rows[1],
+        "Message",
+        &app.messaging.message,
+        message_active,
+    );
 }

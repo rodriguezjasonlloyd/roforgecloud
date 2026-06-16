@@ -1,6 +1,6 @@
 use roforgecloud_core::opencloud::ListQuery;
 
-use crate::app::{App, TextFieldExt, Screen, ValueSource};
+use crate::app::{App, Screen, TextFieldExt, ValueSource};
 use crate::status;
 
 impl App {
@@ -154,7 +154,12 @@ impl App {
                 self.value.text = serde_json::to_string_pretty(&item.value).unwrap_or_default();
                 self.value.revision = item.etag.clone();
                 self.value.scroll = 0;
-                if let Some(cached) = self.memory_entries.items.iter_mut().find(|i| i.id == item.id) {
+                if let Some(cached) = self
+                    .memory_entries
+                    .items
+                    .iter_mut()
+                    .find(|i| i.id == item.id)
+                {
                     cached.value = item.value;
                     cached.etag = item.etag;
                     cached.expire_time = item.expire_time;
@@ -178,13 +183,14 @@ impl App {
             self.status = status::id_too_long();
             return;
         }
-        let value: serde_json::Value = match serde_json::from_str(self.memory_entries.create_value.get_value()) {
-            Ok(value) => value,
-            Err(err) => {
-                self.status = status::json_error(err);
-                return;
-            }
-        };
+        let value: serde_json::Value =
+            match serde_json::from_str(self.memory_entries.create_value.get_value()) {
+                Ok(value) => value,
+                Err(err) => {
+                    self.status = status::json_error(err);
+                    return;
+                }
+            };
         let ttl: u64 = match self.memory_entries.create_ttl.get_value().parse() {
             Ok(ttl) => ttl,
             Err(_) => {
@@ -263,7 +269,8 @@ impl App {
 
         for &i in &indices {
             let id = self.memory_entries.items[i].id.clone();
-            self.status = status::bulk_progress(deleted_indices.len() + errors + 1, total, "deleting");
+            self.status =
+                status::bulk_progress(deleted_indices.len() + errors + 1, total, "deleting");
             match self
                 .client
                 .delete_sorted_map_item(self.universe_id, &self.memory_store_input.id, &id)

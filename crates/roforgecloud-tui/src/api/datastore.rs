@@ -1,6 +1,6 @@
 use roforgecloud_core::opencloud::ListQuery;
 
-use crate::app::{App, TextFieldExt, Screen, TreeTarget, ValueSource};
+use crate::app::{App, Screen, TextFieldExt, TreeTarget, ValueSource};
 use crate::status;
 use crate::tree_editor::TreeEditor;
 
@@ -100,7 +100,12 @@ impl App {
         }
 
         self.stores.marked.clear();
-        self.status = status::bulk_result(total - errors, errors, "data stores", "scheduled for deletion");
+        self.status = status::bulk_result(
+            total - errors,
+            errors,
+            "data stores",
+            "scheduled for deletion",
+        );
     }
 
     pub async fn bulk_undelete_data_stores(&mut self) {
@@ -230,7 +235,12 @@ impl App {
         self.status = status::loading();
         match self
             .client
-            .get_entry_with_revision(self.universe_id, &self.stores.data_store_id, &key, Some(&scope))
+            .get_entry_with_revision(
+                self.universe_id,
+                &self.stores.data_store_id,
+                &key,
+                Some(&scope),
+            )
             .await
         {
             Ok((value, revision)) => {
@@ -344,13 +354,14 @@ impl App {
             None => ("global".to_string(), id.to_string()),
         };
 
-        let value: serde_json::Value = match serde_json::from_str(self.entries.create_value.get_value()) {
-            Ok(value) => value,
-            Err(err) => {
-                self.status = status::json_error(err);
-                return;
-            }
-        };
+        let value: serde_json::Value =
+            match serde_json::from_str(self.entries.create_value.get_value()) {
+                Ok(value) => value,
+                Err(err) => {
+                    self.status = status::json_error(err);
+                    return;
+                }
+            };
 
         self.status = status::creating();
         match self
@@ -388,7 +399,12 @@ impl App {
         self.status = status::deleting();
         match self
             .client
-            .delete_entry(self.universe_id, &self.stores.data_store_id, &key, Some(&scope))
+            .delete_entry(
+                self.universe_id,
+                &self.stores.data_store_id,
+                &key,
+                Some(&scope),
+            )
             .await
         {
             Ok(()) => {
@@ -435,10 +451,16 @@ impl App {
         let mut errors = 0;
 
         for (i, scope, key) in &targets {
-            self.status = status::bulk_progress(deleted_indices.len() + errors + 1, total, "deleting");
+            self.status =
+                status::bulk_progress(deleted_indices.len() + errors + 1, total, "deleting");
             match self
                 .client
-                .delete_entry(self.universe_id, &self.stores.data_store_id, key, Some(scope))
+                .delete_entry(
+                    self.universe_id,
+                    &self.stores.data_store_id,
+                    key,
+                    Some(scope),
+                )
                 .await
             {
                 Ok(()) => deleted_indices.push(*i),

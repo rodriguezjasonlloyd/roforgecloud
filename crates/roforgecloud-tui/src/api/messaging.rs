@@ -14,11 +14,7 @@ impl App {
         self.status = status::publishing();
         match self
             .client
-            .publish_message(
-                self.universe_id,
-                &topic,
-                &message,
-            )
+            .publish_message(self.universe_id, &topic, &message)
             .await
         {
             Ok(()) => {

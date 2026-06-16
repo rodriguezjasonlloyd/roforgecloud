@@ -1,3 +1,4 @@
+use crossterm::event::KeyEvent;
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
@@ -5,11 +6,12 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 use ratatui_which_key::Keymap;
-use crossterm::event::KeyEvent;
 
 use crate::app::{Action, App, PendingConfirm, Screen, TextFieldExt};
-use crate::update::{self, Act, Category, Scope, bind, bind_quit, dispatch, handle_pending_confirm};
 use crate::ui::{breadcrumb, universe_label};
+use crate::update::{
+    self, bind, bind_quit, dispatch, handle_pending_confirm, Act, Category, Scope,
+};
 
 pub(crate) struct State {
     pub title: String,
@@ -31,16 +33,50 @@ impl State {
             increment_editing: false,
         }
     }
-
-
 }
 
 pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
     bind_quit(km, Scope::OrderedValue);
-    bind(km, KeyCode::Char('h'), Act { desc: "back", handler: |app| { app.screen = Screen::OrderedEntries; app.status.clear(); None } }, Scope::OrderedValue);
-    bind(km, KeyCode::Char('r'), Act { desc: "refresh", handler: |_| Some(Action::LoadOrderedValue) }, Scope::OrderedValue);
-    bind(km, KeyCode::Enter, Act { desc: "edit", handler: value_edit }, Scope::OrderedValue);
-    bind(km, KeyCode::Char('e'), Act { desc: "edit", handler: value_edit }, Scope::OrderedValue);
+    bind(
+        km,
+        KeyCode::Char('h'),
+        Act {
+            desc: "back",
+            handler: |app| {
+                app.screen = Screen::OrderedEntries;
+                app.status.clear();
+                None
+            },
+        },
+        Scope::OrderedValue,
+    );
+    bind(
+        km,
+        KeyCode::Char('r'),
+        Act {
+            desc: "refresh",
+            handler: |_| Some(Action::LoadOrderedValue),
+        },
+        Scope::OrderedValue,
+    );
+    bind(
+        km,
+        KeyCode::Enter,
+        Act {
+            desc: "edit",
+            handler: value_edit,
+        },
+        Scope::OrderedValue,
+    );
+    bind(
+        km,
+        KeyCode::Char('e'),
+        Act {
+            desc: "edit",
+            handler: value_edit,
+        },
+        Scope::OrderedValue,
+    );
     bind(
         km,
         KeyCode::Char('i'),
@@ -95,7 +131,9 @@ pub(crate) fn handle_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> O
             KeyCode::Backspace => {
                 app.ordered_value.increment_edit.pop();
             }
-            KeyCode::Char(c) if update::is_numeric_input_char(c) => app.ordered_value.increment_edit.push(c),
+            KeyCode::Char(c) if update::is_numeric_input_char(c) => {
+                app.ordered_value.increment_edit.push(c)
+            }
             _ => {}
         }
         return None;
@@ -146,14 +184,16 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
     let scope = app.ordered_store_input.scope.get_value().to_string();
     let scope_suffix = format!("scope: {scope}");
     let title = breadcrumb(
-        &[uni.as_str(), "ordered data stores", store.as_str(), &app.ordered_value.title],
+        &[
+            uni.as_str(),
+            "ordered data stores",
+            store.as_str(),
+            &app.ordered_value.title,
+        ],
         Some(scope_suffix.as_str()),
     );
-    let paragraph = Paragraph::new(lines).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(title),
-    );
+    let paragraph =
+        Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(title));
     frame.render_widget(paragraph, area);
 }
 

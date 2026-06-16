@@ -9,14 +9,19 @@ use ratatui::Frame;
 use ratatui_which_key::Keymap;
 use roforgecloud_core::opencloud::datastore::DataStoreEntryInfo;
 
-use crate::app::{Action, App, EntriesCreateField, PendingConfirm, Screen, TextField, TextFieldExt, TreeTarget};
-use crate::status;
-use crate::user_lookup;
-use crate::update::{
-    Act, Category, Scope, bind, bind_list_nav, bind_quit, dispatch, handle_pending_confirm, handle_text_field_key,
-    handle_tree_key, list_nav_key,
+use crate::app::{
+    Action, App, EntriesCreateField, PendingConfirm, Screen, TextField, TextFieldExt, TreeTarget,
 };
-use crate::ui::{HIGHLIGHT_STYLE, breadcrumb, centered_rect, centered_rect_lines, draw_tree, field_box, field_paragraph_box, universe_label};
+use crate::status;
+use crate::ui::{
+    breadcrumb, centered_rect, centered_rect_lines, draw_tree, field_box, field_paragraph_box,
+    universe_label, HIGHLIGHT_STYLE,
+};
+use crate::update::{
+    bind, bind_list_nav, bind_quit, dispatch, handle_pending_confirm, handle_text_field_key,
+    handle_tree_key, list_nav_key, Act, Category, Scope,
+};
+use crate::user_lookup;
 
 pub(crate) struct State {
     pub items: Vec<DataStoreEntryInfo>,
@@ -134,10 +139,42 @@ impl State {
 pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
     bind_list_nav(km, Scope::Entries);
     bind_quit(km, Scope::Entries);
-    bind(km, KeyCode::Char('h'), Act { desc: "back", handler: back }, Scope::Entries);
-    bind(km, KeyCode::Char('n'), Act { desc: "next page", handler: |_| Some(Action::LoadNextEntriesPage) }, Scope::Entries);
-    bind(km, KeyCode::Char('p'), Act { desc: "prev page", handler: |_| Some(Action::LoadPrevEntriesPage) }, Scope::Entries);
-    bind(km, KeyCode::Char('r'), Act { desc: "refresh", handler: |_| Some(Action::RefreshEntries) }, Scope::Entries);
+    bind(
+        km,
+        KeyCode::Char('h'),
+        Act {
+            desc: "back",
+            handler: back,
+        },
+        Scope::Entries,
+    );
+    bind(
+        km,
+        KeyCode::Char('n'),
+        Act {
+            desc: "next page",
+            handler: |_| Some(Action::LoadNextEntriesPage),
+        },
+        Scope::Entries,
+    );
+    bind(
+        km,
+        KeyCode::Char('p'),
+        Act {
+            desc: "prev page",
+            handler: |_| Some(Action::LoadPrevEntriesPage),
+        },
+        Scope::Entries,
+    );
+    bind(
+        km,
+        KeyCode::Char('r'),
+        Act {
+            desc: "refresh",
+            handler: |_| Some(Action::RefreshEntries),
+        },
+        Scope::Entries,
+    );
     bind(
         km,
         KeyCode::Char('/'),
@@ -154,23 +191,57 @@ pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
     bind(
         km,
         KeyCode::Char('c'),
-        Act { desc: "create", handler: |app| { app.entries.create_choosing = true; None } },
+        Act {
+            desc: "create",
+            handler: |app| {
+                app.entries.create_choosing = true;
+                None
+            },
+        },
         Scope::Entries,
     );
     bind(
         km,
         KeyCode::Char(' '),
-        Act { desc: "select", handler: |app| { app.entries.toggle_mark(); None } },
+        Act {
+            desc: "select",
+            handler: |app| {
+                app.entries.toggle_mark();
+                None
+            },
+        },
         Scope::Entries,
     );
     bind(
         km,
         KeyCode::Char('a'),
-        Act { desc: "select all", handler: |app| { app.entries.toggle_select_all_visible(); None } },
+        Act {
+            desc: "select all",
+            handler: |app| {
+                app.entries.toggle_select_all_visible();
+                None
+            },
+        },
         Scope::Entries,
     );
-    bind(km, KeyCode::Char('d'), Act { desc: "delete", handler: delete }, Scope::Entries);
-    bind(km, KeyCode::Char('l'), Act { desc: "view", handler: view }, Scope::Entries);
+    bind(
+        km,
+        KeyCode::Char('d'),
+        Act {
+            desc: "delete",
+            handler: delete,
+        },
+        Scope::Entries,
+    );
+    bind(
+        km,
+        KeyCode::Char('l'),
+        Act {
+            desc: "view",
+            handler: view,
+        },
+        Scope::Entries,
+    );
 }
 
 pub(crate) fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
@@ -235,7 +306,11 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
             let entry = &app.entries.items[i];
             let mut spans = Vec::new();
             if !app.entries.marked.is_empty() {
-                let marker = if app.entries.marked.contains(&i) { "[x] " } else { "[ ] " };
+                let marker = if app.entries.marked.contains(&i) {
+                    "[x] "
+                } else {
+                    "[ ] "
+                };
                 spans.push(Span::raw(marker));
             }
             spans.push(Span::raw(entry.id.clone()));
@@ -255,12 +330,15 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
     let q = app.entries.search.get_value();
     let n = app.entries.marked.len();
     let suffix = match (!q.is_empty(), n > 0) {
-        (true, true)  => Some(format!("search: {q}  ·  {n} selected")),
+        (true, true) => Some(format!("search: {q}  ·  {n} selected")),
         (true, false) => Some(format!("search: {q}")),
         (false, true) => Some(format!("{n} selected")),
         (false, false) => None,
     };
-    let title = breadcrumb(&[uni.as_str(), "data stores", &app.stores.data_store_id], suffix.as_deref());
+    let title = breadcrumb(
+        &[uni.as_str(), "data stores", &app.stores.data_store_id],
+        suffix.as_deref(),
+    );
 
     let list = List::new(items)
         .block(Block::default().borders(Borders::ALL).title(title))
@@ -301,7 +379,13 @@ fn draw_create_popup(frame: &mut Frame, app: &App, area: Rect) {
         .split(inner);
 
     field_box(frame, rows[0], "Id", &app.entries.create_id, id_active);
-    field_paragraph_box(frame, rows[1], "Value (JSON)", &app.entries.create_value, value_active);
+    field_paragraph_box(
+        frame,
+        rows[1],
+        "Value (JSON)",
+        &app.entries.create_value,
+        value_active,
+    );
 }
 
 fn delete(app: &mut App) -> Option<Action> {

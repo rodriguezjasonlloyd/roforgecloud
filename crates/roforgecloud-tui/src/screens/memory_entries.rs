@@ -8,10 +8,18 @@ use ratatui::Frame;
 use ratatui_which_key::Keymap;
 use roforgecloud_core::opencloud::memory_store::SortedMapItem;
 
-use crate::app::{Action, App, MemoryCreateField, PendingConfirm, Screen, TextField, TextFieldExt, TreeTarget};
+use crate::app::{
+    Action, App, MemoryCreateField, PendingConfirm, Screen, TextField, TextFieldExt, TreeTarget,
+};
 use crate::status;
-use crate::update::{self, Act, Category, Scope, bind, bind_list_nav, bind_quit, dispatch, handle_pending_confirm, handle_text_field_key, list_nav_key};
-use crate::ui::{HIGHLIGHT_STYLE, breadcrumb, centered_rect_lines, centered_rect, field_box, field_paragraph_box, draw_tree, universe_label};
+use crate::ui::{
+    breadcrumb, centered_rect, centered_rect_lines, draw_tree, field_box, field_paragraph_box,
+    universe_label, HIGHLIGHT_STYLE,
+};
+use crate::update::{
+    self, bind, bind_list_nav, bind_quit, dispatch, handle_pending_confirm, handle_text_field_key,
+    list_nav_key, Act, Category, Scope,
+};
 
 pub(crate) struct State {
     pub items: Vec<SortedMapItem>,
@@ -43,7 +51,11 @@ impl State {
             search_active: false,
             create_id: TextField::default(),
             create_value: TextField::default(),
-            create_ttl: { let mut f = tui_textarea::TextArea::default(); f.set_value("3600"); f },
+            create_ttl: {
+                let mut f = tui_textarea::TextArea::default();
+                f.set_value("3600");
+                f
+            },
             create_field: MemoryCreateField::Id,
             create_active: false,
             create_choosing: false,
@@ -92,10 +104,42 @@ impl State {
 pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
     bind_list_nav(km, Scope::MemoryEntries);
     bind_quit(km, Scope::MemoryEntries);
-    bind(km, KeyCode::Char('h'), Act { desc: "back", handler: back }, Scope::MemoryEntries);
-    bind(km, KeyCode::Char('n'), Act { desc: "next page", handler: |_| Some(Action::LoadNextMemoryItemsPage) }, Scope::MemoryEntries);
-    bind(km, KeyCode::Char('p'), Act { desc: "prev page", handler: |_| Some(Action::LoadPrevMemoryItemsPage) }, Scope::MemoryEntries);
-    bind(km, KeyCode::Char('r'), Act { desc: "refresh", handler: |_| Some(Action::RefreshMemoryItems) }, Scope::MemoryEntries);
+    bind(
+        km,
+        KeyCode::Char('h'),
+        Act {
+            desc: "back",
+            handler: back,
+        },
+        Scope::MemoryEntries,
+    );
+    bind(
+        km,
+        KeyCode::Char('n'),
+        Act {
+            desc: "next page",
+            handler: |_| Some(Action::LoadNextMemoryItemsPage),
+        },
+        Scope::MemoryEntries,
+    );
+    bind(
+        km,
+        KeyCode::Char('p'),
+        Act {
+            desc: "prev page",
+            handler: |_| Some(Action::LoadPrevMemoryItemsPage),
+        },
+        Scope::MemoryEntries,
+    );
+    bind(
+        km,
+        KeyCode::Char('r'),
+        Act {
+            desc: "refresh",
+            handler: |_| Some(Action::RefreshMemoryItems),
+        },
+        Scope::MemoryEntries,
+    );
     bind(
         km,
         KeyCode::Char('/'),
@@ -112,19 +156,37 @@ pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
     bind(
         km,
         KeyCode::Char('c'),
-        Act { desc: "create", handler: |app| { app.memory_entries.create_choosing = true; None } },
+        Act {
+            desc: "create",
+            handler: |app| {
+                app.memory_entries.create_choosing = true;
+                None
+            },
+        },
         Scope::MemoryEntries,
     );
     bind(
         km,
         KeyCode::Char(' '),
-        Act { desc: "select", handler: |app| { app.memory_entries.toggle_mark(); None } },
+        Act {
+            desc: "select",
+            handler: |app| {
+                app.memory_entries.toggle_mark();
+                None
+            },
+        },
         Scope::MemoryEntries,
     );
     bind(
         km,
         KeyCode::Char('a'),
-        Act { desc: "select all", handler: |app| { app.memory_entries.toggle_select_all_visible(); None } },
+        Act {
+            desc: "select all",
+            handler: |app| {
+                app.memory_entries.toggle_select_all_visible();
+                None
+            },
+        },
         Scope::MemoryEntries,
     );
     bind(
@@ -143,8 +205,24 @@ pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
         },
         Scope::MemoryEntries,
     );
-    bind(km, KeyCode::Char('d'), Act { desc: "delete", handler: delete }, Scope::MemoryEntries);
-    bind(km, KeyCode::Char('l'), Act { desc: "view", handler: view }, Scope::MemoryEntries);
+    bind(
+        km,
+        KeyCode::Char('d'),
+        Act {
+            desc: "delete",
+            handler: delete,
+        },
+        Scope::MemoryEntries,
+    );
+    bind(
+        km,
+        KeyCode::Char('l'),
+        Act {
+            desc: "view",
+            handler: view,
+        },
+        Scope::MemoryEntries,
+    );
 }
 
 pub(crate) fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
@@ -181,7 +259,9 @@ pub(crate) fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) 
                 None
             }
             _ => {
-                handle_text_field_key(&mut app.memory_entries.ttl_edit, code, |c| c.is_ascii_digit());
+                handle_text_field_key(&mut app.memory_entries.ttl_edit, code, |c| {
+                    c.is_ascii_digit()
+                });
                 None
             }
         };
@@ -225,12 +305,19 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
             let item = &app.memory_entries.items[i];
             let mut spans = Vec::new();
             if !app.memory_entries.marked.is_empty() {
-                let marker = if app.memory_entries.marked.contains(&i) { "[x] " } else { "[ ] " };
+                let marker = if app.memory_entries.marked.contains(&i) {
+                    "[x] "
+                } else {
+                    "[ ] "
+                };
                 spans.push(Span::raw(marker));
             }
             let preview = serde_json::to_string(&item.value).unwrap_or_default();
             let expire = item.expire_time.as_deref().unwrap_or("—");
-            spans.push(Span::raw(format!("{}  =  {preview}  (expires: {expire})", item.id)));
+            spans.push(Span::raw(format!(
+                "{}  =  {preview}  (expires: {expire})",
+                item.id
+            )));
             ListItem::new(Line::from(spans))
         })
         .collect();
@@ -239,12 +326,15 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
     let q = app.memory_entries.search.get_value();
     let n = app.memory_entries.marked.len();
     let suffix = match (!q.is_empty(), n > 0) {
-        (true, true)  => Some(format!("search: {q}  ·  {n} selected")),
+        (true, true) => Some(format!("search: {q}  ·  {n} selected")),
         (true, false) => Some(format!("search: {q}")),
         (false, true) => Some(format!("{n} selected")),
         (false, false) => None,
     };
-    let title = breadcrumb(&[uni.as_str(), "memory stores", &app.memory_store_input.id], suffix.as_deref());
+    let title = breadcrumb(
+        &[uni.as_str(), "memory stores", &app.memory_store_input.id],
+        suffix.as_deref(),
+    );
 
     let list = List::new(items)
         .block(Block::default().borders(Borders::ALL).title(title))
@@ -286,18 +376,46 @@ fn draw_create_popup(frame: &mut Frame, app: &App, area: Rect) {
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(0), Constraint::Length(3)])
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(0),
+            Constraint::Length(3),
+        ])
         .split(inner);
 
-    field_box(frame, rows[0], "Id", &app.memory_entries.create_id, id_active);
-    field_paragraph_box(frame, rows[1], "Value (JSON)", &app.memory_entries.create_value, value_active);
-    field_box(frame, rows[2], "TTL (seconds)", &app.memory_entries.create_ttl, ttl_active);
+    field_box(
+        frame,
+        rows[0],
+        "Id",
+        &app.memory_entries.create_id,
+        id_active,
+    );
+    field_paragraph_box(
+        frame,
+        rows[1],
+        "Value (JSON)",
+        &app.memory_entries.create_value,
+        value_active,
+    );
+    field_box(
+        frame,
+        rows[2],
+        "TTL (seconds)",
+        &app.memory_entries.create_ttl,
+        ttl_active,
+    );
 }
 
 fn draw_ttl_popup(frame: &mut Frame, app: &App, area: Rect) {
     let popup = centered_rect_lines(40, 3, area);
     frame.render_widget(Clear, popup);
-    field_box(frame, popup, "Edit TTL (seconds)", &app.memory_entries.ttl_edit, true);
+    field_box(
+        frame,
+        popup,
+        "Edit TTL (seconds)",
+        &app.memory_entries.ttl_edit,
+        true,
+    );
 }
 
 fn delete(app: &mut App) -> Option<Action> {
@@ -345,9 +463,17 @@ fn handle_create_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> O
         }
         _ => {
             match app.memory_entries.create_field {
-                MemoryCreateField::Id => handle_text_field_key(&mut app.memory_entries.create_id, code, |_| true),
-                MemoryCreateField::Value => handle_text_field_key(&mut app.memory_entries.create_value, code, |_| true),
-                MemoryCreateField::Ttl => handle_text_field_key(&mut app.memory_entries.create_ttl, code, |c| c.is_ascii_digit()),
+                MemoryCreateField::Id => {
+                    handle_text_field_key(&mut app.memory_entries.create_id, code, |_| true)
+                }
+                MemoryCreateField::Value => {
+                    handle_text_field_key(&mut app.memory_entries.create_value, code, |_| true)
+                }
+                MemoryCreateField::Ttl => {
+                    handle_text_field_key(&mut app.memory_entries.create_ttl, code, |c| {
+                        c.is_ascii_digit()
+                    })
+                }
             };
             None
         }

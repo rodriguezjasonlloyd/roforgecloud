@@ -44,7 +44,8 @@ impl App {
 
         self.status = status::fetching();
         let result = async {
-            let token = auth::access_token(oauth, &self.redirect_uri, &auth::NoopLoginPrompt).await?;
+            let token =
+                auth::access_token(oauth, &self.redirect_uri, &auth::NoopLoginPrompt).await?;
             let resources = oauth.token_resources(&token).await?;
             anyhow::Ok(oauth::authorized_universe_ids(&resources))
         }

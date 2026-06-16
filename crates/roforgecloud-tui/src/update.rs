@@ -1,13 +1,12 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-pub(crate) use ratatui_which_key::WhichKeyState;
 use ratatui_which_key::Keymap;
+pub(crate) use ratatui_which_key::WhichKeyState;
 
 use crate::screens;
 
 use crate::app::{
-    Action, App, PendingConfirm, Screen, TextField,
-    TreeTarget, ValueSource, SERVICE_DATA_STORES, SERVICE_MEMORY_STORES, SERVICE_MESSAGING,
-    SERVICE_ORDERED_DATA_STORES,
+    Action, App, PendingConfirm, Screen, TextField, TreeTarget, ValueSource, SERVICE_DATA_STORES,
+    SERVICE_MEMORY_STORES, SERVICE_MESSAGING, SERVICE_ORDERED_DATA_STORES,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -24,7 +23,6 @@ pub(crate) enum Scope {
     OrderedValue,
     MemoryEntries,
 }
-
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Category {
@@ -73,15 +71,66 @@ pub(crate) fn bind(
 }
 
 pub(crate) fn bind_list_nav(km: &mut Keymap<KeyEvent, Scope, Act, Category>, scope: Scope) {
-    bind(km, KeyCode::Char('j'), Act { desc: "move down", handler: |_| None }, scope);
-    bind(km, KeyCode::Down,     Act { desc: "move down", handler: |_| None }, scope);
-    bind(km, KeyCode::Char('k'), Act { desc: "move up",  handler: |_| None }, scope);
-    bind(km, KeyCode::Up,        Act { desc: "move up",  handler: |_| None }, scope);
+    bind(
+        km,
+        KeyCode::Char('j'),
+        Act {
+            desc: "move down",
+            handler: |_| None,
+        },
+        scope,
+    );
+    bind(
+        km,
+        KeyCode::Down,
+        Act {
+            desc: "move down",
+            handler: |_| None,
+        },
+        scope,
+    );
+    bind(
+        km,
+        KeyCode::Char('k'),
+        Act {
+            desc: "move up",
+            handler: |_| None,
+        },
+        scope,
+    );
+    bind(
+        km,
+        KeyCode::Up,
+        Act {
+            desc: "move up",
+            handler: |_| None,
+        },
+        scope,
+    );
 }
 
 pub(crate) fn bind_quit(km: &mut Keymap<KeyEvent, Scope, Act, Category>, scope: Scope) {
-    bind(km, KeyCode::Char('q'), Act { desc: "quit", handler: do_quit }, scope);
-    bind(km, KeyCode::Char('?'), Act { desc: "help", handler: |app| { app.which_key.toggle(); None } }, scope);
+    bind(
+        km,
+        KeyCode::Char('q'),
+        Act {
+            desc: "quit",
+            handler: do_quit,
+        },
+        scope,
+    );
+    bind(
+        km,
+        KeyCode::Char('?'),
+        Act {
+            desc: "help",
+            handler: |app| {
+                app.which_key.toggle();
+                None
+            },
+        },
+        scope,
+    );
 }
 
 fn do_quit(app: &mut App) -> Option<Action> {
@@ -103,7 +152,6 @@ pub(crate) fn dispatch(
     let act = app.which_key.handle_key(KeyEvent::new(code, modifiers))?;
     (act.handler)(app)
 }
-
 
 pub(crate) fn build_keymap() -> Keymap<KeyEvent, Scope, Act, Category> {
     let mut keymap = Keymap::new();
@@ -444,7 +492,6 @@ pub(crate) fn list_nav_key(
     }
 }
 
-
 pub(crate) fn handle_pending_confirm(app: &mut App, code: KeyCode) -> Option<Option<Action>> {
     let pending = app.pending_confirm.take()?;
     app.confirm_deadline = None;
@@ -489,8 +536,6 @@ pub(crate) fn handle_pending_confirm(app: &mut App, code: KeyCode) -> Option<Opt
         }
     }
 }
-
-
 
 pub(crate) fn is_numeric_input_char(c: char) -> bool {
     c.is_ascii_digit() || c == '.' || c == '-'
@@ -561,4 +606,3 @@ pub(crate) fn handle_tree_key(
 
     dispatch(app, Scope::Tree, code, modifiers)
 }
-

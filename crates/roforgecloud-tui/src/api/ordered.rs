@@ -1,6 +1,6 @@
 use roforgecloud_core::opencloud::ListQuery;
 
-use crate::app::{App, TextFieldExt, Screen};
+use crate::app::{App, Screen, TextFieldExt};
 use crate::status;
 
 impl App {
@@ -252,7 +252,8 @@ impl App {
 
         for &i in &indices {
             let id = self.ordered_entries.items[i].id.clone();
-            self.status = status::bulk_progress(deleted_indices.len() + errors + 1, total, "deleting");
+            self.status =
+                status::bulk_progress(deleted_indices.len() + errors + 1, total, "deleting");
             match self
                 .client
                 .delete_ordered_entry(

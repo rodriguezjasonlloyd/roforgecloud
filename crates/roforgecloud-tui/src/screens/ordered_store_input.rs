@@ -85,12 +85,28 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Length(3), Constraint::Min(0)])
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Min(0),
+        ])
         .split(inner);
 
     let id_active = app.ordered_store_input.input_field == OrderedInputField::StoreId;
     let scope_active = app.ordered_store_input.input_field == OrderedInputField::Scope;
 
-    ui::field_box(frame, rows[0], "Ordered Data Store ID", &app.ordered_store_input.store_id, id_active);
-    ui::field_box(frame, rows[1], "Scope", &app.ordered_store_input.scope, scope_active);
+    ui::field_box(
+        frame,
+        rows[0],
+        "Ordered Data Store ID",
+        &app.ordered_store_input.store_id,
+        id_active,
+    );
+    ui::field_box(
+        frame,
+        rows[1],
+        "Scope",
+        &app.ordered_store_input.scope,
+        scope_active,
+    );
 }

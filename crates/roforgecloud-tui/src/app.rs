@@ -160,7 +160,6 @@ pub enum PendingConfirm {
     TreeRefresh,
 }
 
-
 pub struct App {
     pub client: OpenCloudClient,
     pub has_api_key: bool,
@@ -259,10 +258,7 @@ impl App {
             memory_entries: screens::memory_entries::State::new(),
             memory_item_editing_id: String::new(),
             memory_item_ttl_seconds: 3600,
-            which_key: update::Keys::new(
-                update::build_keymap(),
-                update::Scope::Menu,
-            ),
+            which_key: update::Keys::new(update::build_keymap(), update::Scope::Menu),
         }
     }
 
