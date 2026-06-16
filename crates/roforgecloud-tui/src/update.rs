@@ -241,63 +241,7 @@ pub(crate) fn build_keymap() -> Keymap<KeyEvent, Scope, Act, Category> {
     crate::screens::universe_select::bind_keys(&mut keymap);
 
     // Stores
-    bind(&mut keymap, KeyCode::Enter, Act { desc: "open", handler: stores_open }, Scope::Stores);
-    bind(&mut keymap, KeyCode::Char('l'), Act { desc: "open", handler: stores_open }, Scope::Stores);
-    bind(
-        &mut keymap,
-        KeyCode::Char(' '),
-        Act {
-            desc: "select",
-            handler: |app| {
-                app.toggle_store_mark();
-                None
-            },
-        },
-        Scope::Stores,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('a'),
-        Act {
-            desc: "select all",
-            handler: |app| {
-                app.toggle_select_all_stores();
-                None
-            },
-        },
-        Scope::Stores,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('r'),
-        Act { desc: "refresh", handler: |_| Some(Action::LoadStores) },
-        Scope::Stores,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('c'),
-        Act {
-            desc: "create entry in new store",
-            handler: |app| {
-                app.stores_new_id.clear();
-                app.stores_new_active = true;
-                None
-            },
-        },
-        Scope::Stores,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('d'),
-        Act { desc: "delete", handler: stores_delete },
-        Scope::Stores,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('u'),
-        Act { desc: "undelete", handler: stores_undelete },
-        Scope::Stores,
-    );
+    crate::screens::stores::bind_keys(&mut keymap);
 
     // Entries
     bind(
@@ -856,42 +800,6 @@ pub(crate) fn build_keymap() -> Keymap<KeyEvent, Scope, Act, Category> {
 
 
 
-fn stores_open(app: &mut App) -> Option<Action> {
-    let store = app.stores.get(app.stores_selected)?;
-    if store.state.as_deref().is_some_and(|s| s != "ACTIVE") {
-        return None;
-    }
-    app.data_store_id = store.id.clone();
-    app.entries_next_page_token = None;
-    app.screen = Screen::Entries;
-    Some(Action::LoadEntries)
-}
-
-fn stores_delete(app: &mut App) -> Option<Action> {
-    if !app.stores_marked.is_empty() {
-        app.arm_confirm(PendingConfirm::BulkDeleteStores);
-        return None;
-    }
-    let store = app.stores.get(app.stores_selected)?;
-    if store.state.as_deref().is_some_and(|s| s != "ACTIVE") {
-        return None;
-    }
-    app.arm_confirm(PendingConfirm::DeleteStore);
-    None
-}
-
-fn stores_undelete(app: &mut App) -> Option<Action> {
-    if !app.stores_marked.is_empty() {
-        app.arm_confirm(PendingConfirm::BulkUndeleteStores);
-        return None;
-    }
-    let store = app.stores.get(app.stores_selected)?;
-    if store.state.as_deref() != Some("ACTIVE") {
-        return Some(Action::UndeleteDataStore);
-    }
-    None
-}
-
 fn entries_delete(app: &mut App) -> Option<Action> {
     if !app.entries_marked.is_empty() {
         app.arm_confirm(PendingConfirm::BulkDeleteEntries);
@@ -1224,62 +1132,8 @@ struct KeyAction {
     hint: fn(&App) -> Option<HintEntry>,
 }
 
-fn handle_stores_new_key(app: &mut App, code: KeyCode) -> Option<Action> {
-    match code {
-        KeyCode::Enter => {
-            let id = app.stores_new_id.value.trim().to_string();
-            if id.is_empty() {
-                return None;
-            }
-            app.stores_new_active = false;
-            app.data_store_id = id;
-            app.entries.clear();
-            app.entries_selected = 0;
-            app.entries_next_page_token = None;
-            app.entries_page_tokens = vec![None];
-            app.entries_marked.clear();
-            app.entries_search.clear();
-            app.entries_create_id.clear();
-            app.entries_create_value.clear();
-            app.entries_create_field = EntriesCreateField::Id;
-            app.entries_create_active = true;
-            app.status.clear();
-            app.screen = Screen::Entries;
-            None
-        }
-        KeyCode::Esc => {
-            app.stores_new_active = false;
-            app.status.clear();
-            None
-        }
-        _ => {
-            handle_text_field_key(&mut app.stores_new_id, code, |_| true);
-            None
-        }
-    }
-}
-
-pub(crate) fn handle_stores_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> Option<Action> {
-    if app.stores_new_active {
-        return handle_stores_new_key(app, code);
-    }
-
-    if let Some(result) = handle_pending_confirm(app, code) {
-        return result;
-    }
-
-    let len = app.stores.len();
-    if let Some(result) = list_nav_key(code, &mut app.stores_selected, len) {
-        return result;
-    }
-    if let Some(result) = back_key(code, app, Screen::UniverseChoice) {
-        return result;
-    }
-    if let Some(result) = quit_key(code, app) {
-        return result;
-    }
-
-    dispatch(app, Scope::Stores, code, KeyModifiers::empty())
+pub(crate) fn handle_stores_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> Option<Action> {
+    crate::screens::stores::handle_key(app, code, mods)
 }
 
 const ENTRIES_CREATE_KEYS: &[KeyAction] = &[

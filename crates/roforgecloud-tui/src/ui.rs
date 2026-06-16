@@ -282,72 +282,7 @@ fn draw_memory_ttl_popup(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 pub(crate) fn draw_stores(frame: &mut Frame, app: &App, area: Rect) {
-    let items: Vec<ListItem> = app
-        .stores
-        .iter()
-        .enumerate()
-        .map(|(i, store)| {
-            let mut spans = Vec::new();
-            if !app.stores_marked.is_empty() {
-                let marker = if app.stores_marked.contains(&i) {
-                    "[x] "
-                } else {
-                    "[ ] "
-                };
-                spans.push(Span::raw(marker));
-            }
-            spans.push(Span::raw(store.id.clone()));
-            if store
-                .state
-                .as_deref()
-                .is_some_and(|state| state != "ACTIVE")
-            {
-                spans.push(Span::styled(
-                    "  [SCHEDULED DELETION]",
-                    Style::default().fg(Color::DarkGray),
-                ));
-            }
-            ListItem::new(Line::from(spans))
-        })
-        .collect();
-
-    let universe = match app.universe_names.get(&app.universe_id) {
-        Some(name) => format!("{} ({name})", app.universe_id),
-        None => app.universe_id.to_string(),
-    };
-    let base_title = format!("Data Stores (universe {universe})");
-    let title = if app.stores_marked.is_empty() {
-        base_title
-    } else {
-        format!("{base_title} ({} selected)", app.stores_marked.len())
-    };
-
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title(title))
-        .highlight_style(HIGHLIGHT_STYLE);
-
-    let mut state = ListState::default();
-    if !app.stores.is_empty() {
-        state.select(Some(app.stores_selected));
-    }
-    frame.render_stateful_widget(list, area, &mut state);
-
-    if app.stores_new_active {
-        draw_stores_new_popup(frame, app, area);
-    }
-}
-
-fn draw_stores_new_popup(frame: &mut Frame, app: &App, area: Rect) {
-    let popup = centered_rect_lines(50, 5, area);
-
-    frame.render_widget(Clear, popup);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title("Create entry in new store");
-    let inner = block.inner(popup);
-    frame.render_widget(block, popup);
-
-    field_box(frame, inner, "Data Store ID", &app.stores_new_id, true);
+    crate::screens::stores::draw(frame, app, area);
 }
 
 pub(crate) fn draw_entries(frame: &mut Frame, app: &App, area: Rect) {
@@ -382,9 +317,9 @@ pub(crate) fn draw_entries(frame: &mut Frame, app: &App, area: Rect) {
     let store_label = match app.universe_names.get(&app.universe_id) {
         Some(name) => format!(
             "{} (universe {} ({name}))",
-            app.data_store_id, app.universe_id
+            app.stores.data_store_id, app.universe_id
         ),
-        None => app.data_store_id.clone(),
+        None => app.stores.data_store_id.clone(),
     };
     let title = if app.entries_search.value.is_empty() {
         if app.entries_marked.is_empty() {
@@ -627,7 +562,7 @@ fn screen_binds(app: &App) -> String {
             join_hints(&[MOVE, &hint_bar_entries(app, Scope::UniverseSelect), BACK_QUIT])
         }
         Screen::UniverseInput => InputHint::UniverseInput.to_string(),
-        Screen::Stores if app.stores_new_active => InputHint::StoreInput.to_string(),
+        Screen::Stores if app.stores.new_active => InputHint::StoreInput.to_string(),
         Screen::Stores => join_hints(&[MOVE, &hint_bar_entries(app, Scope::Stores), BACK_QUIT]),
         Screen::Entries if app.entries_search_active => {
             InputHint::SearchByIdOrUsername.to_string()
@@ -881,7 +816,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
         .split(vertical[1])[1]
 }
 
-fn centered_rect_lines(percent_x: u16, height: u16, area: Rect) -> Rect {
+pub(crate) fn centered_rect_lines(percent_x: u16, height: u16, area: Rect) -> Rect {
     let width = area.width * percent_x / 100;
     let height = height.min(area.height);
     let x = area.x + (area.width.saturating_sub(width)) / 2;

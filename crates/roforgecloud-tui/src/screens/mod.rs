@@ -3,6 +3,7 @@ pub(crate) mod menu;
 pub(crate) mod messaging;
 pub(crate) mod ordered_store_input;
 pub(crate) mod ordered_value;
+pub(crate) mod stores;
 pub(crate) mod universe_choice;
 pub(crate) mod universe_input;
 pub(crate) mod universe_select;
@@ -58,9 +59,9 @@ pub(crate) const SCREENS: [ScreenDef; 13] = [
     // Screen::Stores (4)
     ScreenDef {
         scope: Some(Scope::Stores),
-        handle_key: crate::update::handle_stores_key,
-        draw: crate::ui::draw_stores,
-        bind_keys: None,
+        handle_key: stores::handle_key,
+        draw: stores::draw,
+        bind_keys: Some(stores::bind_keys),
     },
     // Screen::Entries (5)
     ScreenDef {

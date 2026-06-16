@@ -1,6 +1,6 @@
 use roforgecloud_core::auth;
 use roforgecloud_core::oauth::{self, OAuthClient};
-use roforgecloud_core::opencloud::datastore::{DataStoreEntryInfo, DataStoreInfo};
+use roforgecloud_core::opencloud::datastore::DataStoreEntryInfo;
 use roforgecloud_core::opencloud::memory_store::SortedMapItem;
 use roforgecloud_core::opencloud::ordered_datastore::OrderedDataStoreEntry;
 use roforgecloud_core::opencloud::{ListQuery, OpenCloudClient};
@@ -261,13 +261,8 @@ pub struct App {
 
     pub menu: crate::screens::menu::State,
 
-    pub stores: Vec<DataStoreInfo>,
-    pub stores_selected: usize,
-    pub stores_marked: std::collections::HashSet<usize>,
-    pub stores_new_id: TextField,
-    pub stores_new_active: bool,
+    pub stores: crate::screens::stores::State,
 
-    pub data_store_id: String,
     pub http: reqwest::Client,
     pub entries: Vec<DataStoreEntryInfo>,
     pub usernames: std::collections::HashMap<u64, String>,
@@ -377,12 +372,7 @@ impl App {
             loading: false,
             status: String::new(),
             menu: crate::screens::menu::State::new(),
-            stores: Vec::new(),
-            stores_selected: 0,
-            stores_marked: std::collections::HashSet::new(),
-            stores_new_id: TextField::default(),
-            stores_new_active: false,
-            data_store_id: String::new(),
+            stores: crate::screens::stores::State::new(),
             http: reqwest::Client::new(),
             entries: Vec::new(),
             usernames: std::collections::HashMap::new(),
@@ -608,10 +598,10 @@ impl App {
             .await
         {
             Ok(result) => {
-                self.stores = result.data_stores;
-                self.stores_selected = 0;
-                self.stores_marked.clear();
-                self.status = format!("{} data stores", self.stores.len());
+                self.stores.items = result.data_stores;
+                self.stores.selected = 0;
+                self.stores.marked.clear();
+                self.status = format!("{} data stores", self.stores.items.len());
             }
             Err(err) => {
                 self.status = self.datastore_error(err);
@@ -620,7 +610,7 @@ impl App {
     }
 
     pub async fn delete_data_store(&mut self) {
-        let Some(store) = self.stores.get(self.stores_selected) else {
+        let Some(store) = self.stores.items.get(self.stores.selected) else {
             return;
         };
 
@@ -632,7 +622,7 @@ impl App {
         {
             Ok(info) => {
                 self.status = "data store scheduled for deletion".to_string();
-                self.stores[self.stores_selected] = info;
+                self.stores.items[self.stores.selected] = info;
             }
             Err(err) => {
                 self.status = self.datastore_error(err);
@@ -641,7 +631,7 @@ impl App {
     }
 
     pub async fn undelete_data_store(&mut self) {
-        let Some(store) = self.stores.get(self.stores_selected) else {
+        let Some(store) = self.stores.items.get(self.stores.selected) else {
             return;
         };
 
@@ -653,7 +643,7 @@ impl App {
         {
             Ok(info) => {
                 self.status = "data store restored".to_string();
-                self.stores[self.stores_selected] = info;
+                self.stores.items[self.stores.selected] = info;
             }
             Err(err) => {
                 self.status = self.datastore_error(err);
@@ -662,22 +652,22 @@ impl App {
     }
 
     pub async fn bulk_delete_data_stores(&mut self) {
-        let mut indices: Vec<usize> = self.stores_marked.iter().copied().collect();
+        let mut indices: Vec<usize> = self.stores.marked.iter().copied().collect();
         indices.sort_unstable();
 
         let total = indices.len();
         let mut errors = 0;
 
         for (n, &i) in indices.iter().enumerate() {
-            let id = self.stores[i].id.clone();
+            let id = self.stores.items[i].id.clone();
             self.status = format!("scheduling deletion {}/{total}...", n + 1);
             match self.client.delete_data_store(self.universe_id, &id).await {
-                Ok(info) => self.stores[i] = info,
+                Ok(info) => self.stores.items[i] = info,
                 Err(_) => errors += 1,
             }
         }
 
-        self.stores_marked.clear();
+        self.stores.marked.clear();
         self.status = if errors == 0 {
             format!("scheduled {total} data stores for deletion")
         } else {
@@ -689,22 +679,22 @@ impl App {
     }
 
     pub async fn bulk_undelete_data_stores(&mut self) {
-        let mut indices: Vec<usize> = self.stores_marked.iter().copied().collect();
+        let mut indices: Vec<usize> = self.stores.marked.iter().copied().collect();
         indices.sort_unstable();
 
         let total = indices.len();
         let mut errors = 0;
 
         for (n, &i) in indices.iter().enumerate() {
-            let id = self.stores[i].id.clone();
+            let id = self.stores.items[i].id.clone();
             self.status = format!("restoring {}/{total}...", n + 1);
             match self.client.undelete_data_store(self.universe_id, &id).await {
-                Ok(info) => self.stores[i] = info,
+                Ok(info) => self.stores.items[i] = info,
                 Err(_) => errors += 1,
             }
         }
 
-        self.stores_marked.clear();
+        self.stores.marked.clear();
         self.status = if errors == 0 {
             format!("restored {total} data stores")
         } else {
@@ -741,7 +731,7 @@ impl App {
             .client
             .list_entries(
                 self.universe_id,
-                &self.data_store_id,
+                &self.stores.data_store_id,
                 None,
                 &ListQuery {
                     page_token: page_token.as_deref(),
@@ -775,7 +765,7 @@ impl App {
                 .client
                 .list_entries(
                     self.universe_id,
-                    &self.data_store_id,
+                    &self.stores.data_store_id,
                     None,
                     &ListQuery {
                         page_token: page_token.as_deref(),
@@ -894,7 +884,7 @@ impl App {
     }
 
     pub fn needs_quit_confirm(&self) -> bool {
-        !self.stores_marked.is_empty()
+        !self.stores.marked.is_empty()
             || !self.entries_marked.is_empty()
             || !self.ordered_entries_marked.is_empty()
             || !self.memory_items_marked.is_empty()
@@ -907,7 +897,7 @@ impl App {
             | Screen::OrderedStoreInput
             | Screen::MemoryStoreInput => true,
             Screen::UniverseSelect => self.universe_select.search_active,
-            Screen::Stores => self.stores_new_active,
+            Screen::Stores => self.stores.new_active,
             Screen::Entries => {
                 self.entries_search_active
                     || self.entries_create_active
@@ -961,23 +951,6 @@ impl App {
         }
     }
 
-    pub fn toggle_store_mark(&mut self) {
-        if !self.stores.is_empty() && !self.stores_marked.remove(&self.stores_selected) {
-            self.stores_marked.insert(self.stores_selected);
-        }
-    }
-
-    pub fn toggle_select_all_stores(&mut self) {
-        if self.stores.is_empty() {
-            return;
-        }
-        if self.stores_marked.len() == self.stores.len() {
-            self.stores_marked.clear();
-        } else {
-            self.stores_marked = (0..self.stores.len()).collect();
-        }
-    }
-
     pub fn visible_entry_indices(&self) -> Vec<usize> {
         if self.entries_search.value.is_empty() {
             return (0..self.entries.len()).collect();
@@ -1025,11 +998,11 @@ impl App {
         self.status = "loading value...".to_string();
         match self
             .client
-            .get_entry_with_revision(self.universe_id, &self.data_store_id, &key, Some(&scope))
+            .get_entry_with_revision(self.universe_id, &self.stores.data_store_id, &key, Some(&scope))
             .await
         {
             Ok((value, revision)) => {
-                self.value_title = format!("{}/{} (scope: {scope})", self.data_store_id, key);
+                self.value_title = format!("{}/{} (scope: {scope})", self.stores.data_store_id, key);
                 self.value_text = serde_json::to_string_pretty(&value).unwrap_or_default();
                 self.value_revision = revision;
                 self.value_scroll = 0;
@@ -1134,7 +1107,7 @@ impl App {
             .client
             .set_entry(
                 self.universe_id,
-                &self.data_store_id,
+                &self.stores.data_store_id,
                 &key,
                 Some(&scope),
                 &value,
@@ -1228,7 +1201,7 @@ impl App {
             .client
             .create_entry(
                 self.universe_id,
-                &self.data_store_id,
+                &self.stores.data_store_id,
                 &key,
                 Some(&scope),
                 &value,
@@ -1259,7 +1232,7 @@ impl App {
         self.status = "deleting...".to_string();
         match self
             .client
-            .delete_entry(self.universe_id, &self.data_store_id, &key, Some(&scope))
+            .delete_entry(self.universe_id, &self.stores.data_store_id, &key, Some(&scope))
             .await
         {
             Ok(()) => {
@@ -1309,7 +1282,7 @@ impl App {
             self.status = format!("deleting {}/{total}...", deleted_indices.len() + errors + 1);
             match self
                 .client
-                .delete_entry(self.universe_id, &self.data_store_id, key, Some(scope))
+                .delete_entry(self.universe_id, &self.stores.data_store_id, key, Some(scope))
                 .await
             {
                 Ok(()) => deleted_indices.push(*i),
