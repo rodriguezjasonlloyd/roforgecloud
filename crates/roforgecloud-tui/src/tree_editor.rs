@@ -129,8 +129,12 @@ impl TreeEditor {
         };
 
         if current.is_leaf {
-            let lines: Vec<String> = current.preview.lines().map(String::from).collect();
-            self.edit_text = Some(TextArea::from(lines));
+            self.edit_text = Some(if self.adding {
+                TextArea::default()
+            } else {
+                let lines: Vec<String> = current.preview.lines().map(String::from).collect();
+                TextArea::from(lines)
+            });
         }
     }
 
