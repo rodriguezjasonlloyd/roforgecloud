@@ -1,78 +1,23 @@
-use roforgecloud_core::auth;
-use roforgecloud_core::oauth::{self, OAuthClient};
+use roforgecloud_core::oauth::OAuthClient;
+use roforgecloud_core::opencloud::OpenCloudClient;
 
-use roforgecloud_core::opencloud::{ListQuery, OpenCloudClient};
-
+use crate::screens;
 use crate::tree_editor::TreeEditor;
+use crate::update;
 
+pub type TextField = tui_textarea::TextArea<'static>;
 
-#[derive(Debug, Clone, Default)]
-pub struct TextField {
-    pub value: String,
-    pub cursor: usize,
+pub trait TextFieldExt {
+    fn get_value(&self) -> &str;
+    fn set_value(&mut self, s: impl Into<String>);
 }
 
-impl TextField {
-    pub fn clear(&mut self) {
-        self.value.clear();
-        self.cursor = 0;
+impl TextFieldExt for TextField {
+    fn get_value(&self) -> &str {
+        self.lines().first().map(|s| s.as_str()).unwrap_or("")
     }
-
-    pub fn set(&mut self, value: impl Into<String>) {
-        self.value = value.into();
-        self.cursor = self.value.len();
-    }
-
-    pub fn insert(&mut self, c: char) {
-        self.value.insert(self.cursor, c);
-        self.cursor += c.len_utf8();
-    }
-
-    pub fn backspace(&mut self) {
-        if self.cursor == 0 {
-            return;
-        }
-        let prev_len = self.value[..self.cursor]
-            .chars()
-            .last()
-            .map_or(0, char::len_utf8);
-        let new_cursor = self.cursor - prev_len;
-        self.value.remove(new_cursor);
-        self.cursor = new_cursor;
-    }
-
-    pub fn delete(&mut self) {
-        if self.cursor < self.value.len() {
-            self.value.remove(self.cursor);
-        }
-    }
-
-    pub fn left(&mut self) {
-        if self.cursor > 0 {
-            let prev_len = self.value[..self.cursor]
-                .chars()
-                .last()
-                .map_or(0, char::len_utf8);
-            self.cursor -= prev_len;
-        }
-    }
-
-    pub fn right(&mut self) {
-        if self.cursor < self.value.len() {
-            let next_len = self.value[self.cursor..]
-                .chars()
-                .next()
-                .map_or(0, char::len_utf8);
-            self.cursor += next_len;
-        }
-    }
-
-    pub fn home(&mut self) {
-        self.cursor = 0;
-    }
-
-    pub fn end(&mut self) {
-        self.cursor = self.value.len();
+    fn set_value(&mut self, s: impl Into<String>) {
+        *self = tui_textarea::TextArea::from([s.into()]);
     }
 }
 
@@ -216,7 +161,7 @@ pub enum PendingConfirm {
 
 impl PendingConfirm {
     pub fn footer_hint(&self) -> String {
-        use crate::update::{render_hints, HintEntry, ANY_OTHER_KEY_CANCEL};
+        use update::{render_hints, HintEntry, ANY_OTHER_KEY_CANCEL};
 
         let confirm = match self {
             PendingConfirm::DeleteStore
@@ -249,41 +194,41 @@ pub struct App {
     pub universe_name_rx: tokio::sync::mpsc::UnboundedReceiver<(u64, String)>,
     pub universe_name_tx: tokio::sync::mpsc::UnboundedSender<(u64, String)>,
 
-    pub universe_choice: crate::screens::universe_choice::State,
-    pub universe_select: crate::screens::universe_select::State,
-    pub universe_input: crate::screens::universe_input::State,
+    pub universe_choice: screens::universe_choice::State,
+    pub universe_select: screens::universe_select::State,
+    pub universe_input: screens::universe_input::State,
     pub screen: Screen,
     pub should_quit: bool,
     pub loading: bool,
     pub status: String,
 
-    pub menu: crate::screens::menu::State,
+    pub menu: screens::menu::State,
 
-    pub stores: crate::screens::stores::State,
+    pub stores: screens::stores::State,
 
-    pub entries: crate::screens::entries::State,
+    pub entries: screens::entries::State,
     pub pending_confirm: Option<PendingConfirm>,
     pub confirm_deadline: Option<std::time::Instant>,
 
-    pub value: crate::screens::value::State,
+    pub value: screens::value::State,
 
     pub tree_editor: Option<TreeEditor>,
     pub tree_target: TreeTarget,
     pub clipboard: Option<arboard::Clipboard>,
 
-    pub which_key: crate::update::Keys,
+    pub which_key: update::Keys,
 
-    pub messaging: crate::screens::messaging::State,
+    pub messaging: screens::messaging::State,
 
-    pub ordered_store_input: crate::screens::ordered_store_input::State,
+    pub ordered_store_input: screens::ordered_store_input::State,
 
-    pub ordered_entries: crate::screens::ordered_entries::State,
+    pub ordered_entries: screens::ordered_entries::State,
 
-    pub ordered_value: crate::screens::ordered_value::State,
+    pub ordered_value: screens::ordered_value::State,
 
-    pub memory_store_input: crate::screens::memory_store_input::State,
+    pub memory_store_input: screens::memory_store_input::State,
 
-    pub memory_entries: crate::screens::memory_entries::State,
+    pub memory_entries: screens::memory_entries::State,
 
     pub memory_item_editing_id: String,
     pub memory_item_ttl_seconds: u64,
@@ -311,33 +256,33 @@ impl App {
             universe_names: std::collections::HashMap::new(),
             universe_name_rx: universe_name_channel.1,
             universe_name_tx: universe_name_channel.0,
-            universe_choice: crate::screens::universe_choice::State::new(),
-            universe_select: crate::screens::universe_select::State::new(),
-            universe_input: crate::screens::universe_input::State::new(),
+            universe_choice: screens::universe_choice::State::new(),
+            universe_select: screens::universe_select::State::new(),
+            universe_input: screens::universe_input::State::new(),
             screen: Screen::Menu,
             should_quit: false,
             loading: false,
             status: String::new(),
-            menu: crate::screens::menu::State::new(),
-            stores: crate::screens::stores::State::new(),
-            entries: crate::screens::entries::State::new(),
+            menu: screens::menu::State::new(),
+            stores: screens::stores::State::new(),
+            entries: screens::entries::State::new(),
             pending_confirm: None,
             confirm_deadline: None,
-            value: crate::screens::value::State::new(),
+            value: screens::value::State::new(),
             tree_editor: None,
             tree_target: TreeTarget::Value,
             clipboard: arboard::Clipboard::new().ok(),
-            messaging: crate::screens::messaging::State::new(),
-            ordered_store_input: crate::screens::ordered_store_input::State::new(),
-            ordered_entries: crate::screens::ordered_entries::State::new(),
-            ordered_value: crate::screens::ordered_value::State::new(),
-            memory_store_input: crate::screens::memory_store_input::State::new(),
-            memory_entries: crate::screens::memory_entries::State::new(),
+            messaging: screens::messaging::State::new(),
+            ordered_store_input: screens::ordered_store_input::State::new(),
+            ordered_entries: screens::ordered_entries::State::new(),
+            ordered_value: screens::ordered_value::State::new(),
+            memory_store_input: screens::memory_store_input::State::new(),
+            memory_entries: screens::memory_entries::State::new(),
             memory_item_editing_id: String::new(),
             memory_item_ttl_seconds: 3600,
-            which_key: crate::update::Keys::new(
-                crate::update::build_keymap(),
-                crate::update::Scope::Menu,
+            which_key: update::Keys::new(
+                update::build_keymap(),
+                update::Scope::Menu,
             ),
         }
     }
@@ -396,341 +341,13 @@ impl App {
         }
     }
 
-    pub async fn login(&mut self) {
-        let Some(oauth) = &self.oauth else {
-            self.status =
-                "OAuth not configured: set ROFORGE_OAUTH_CLIENT_ID/ROFORGE_OAUTH_CLIENT_SECRET"
-                    .to_string();
-            return;
-        };
-
-        self.status = "opening browser for login...".to_string();
-        match auth::force_login(oauth, &self.redirect_uri, &auth::NoopLoginPrompt).await {
-            Ok(_) => {
-                self.logged_in = true;
-                self.status = "logged in".to_string();
-            }
-            Err(err) => self.status = format!("error: {err}"),
-        }
-    }
-
-    pub async fn logout(&mut self) {
-        let Some(oauth) = &self.oauth else {
-            self.status =
-                "OAuth not configured: set ROFORGE_OAUTH_CLIENT_ID/ROFORGE_OAUTH_CLIENT_SECRET"
-                    .to_string();
-            return;
-        };
-
-        match auth::logout(oauth).await {
-            Ok(()) => {
-                self.logged_in = false;
-                self.status = "logged out".to_string();
-            }
-            Err(err) => self.status = format!("error: {err}"),
-        }
-    }
-
-    pub async fn load_universes(&mut self) {
-        let Some(oauth) = &self.oauth else {
-            self.status =
-                "OAuth not configured: set ROFORGE_OAUTH_CLIENT_ID/ROFORGE_OAUTH_CLIENT_SECRET"
-                    .to_string();
-            return;
-        };
-
-        self.status = "fetching authorized universes...".to_string();
-        let result = async {
-            let token = auth::access_token(oauth, &self.redirect_uri, &auth::NoopLoginPrompt).await?;
-            let resources = oauth.token_resources(&token).await?;
-            anyhow::Ok(oauth::authorized_universe_ids(&resources))
-        }
-        .await;
-
-        match result {
-            Ok(universes) if universes.is_empty() => {
-                self.status = "no authorized universes found for this token".to_string();
-            }
-            Ok(universes) => {
-                self.available_universes = universes;
-                self.universe_select.selected = 0;
-                self.status.clear();
-                self.screen = Screen::UniverseSelect;
-                self.resolve_universe_names();
-            }
-            Err(err) => {
-                self.status = format!("error: {err}");
-            }
-        }
-    }
-
-    fn datastore_error(&self, err: roforgecloud_core::error::Error) -> String {
-        if !self.has_api_key
-            && matches!(&err, roforgecloud_core::error::Error::Api { status, .. } if status.as_u16() == 401)
-        {
-            "error: Data Stores need an API key — OAuth tokens aren't accepted here. \
-             Set ROFORGE_API_KEY and restart."
-                .to_string()
-        } else {
-            format!("error: {err}")
-        }
-    }
-
-
-
-    pub async fn load_stores(&mut self) {
-        self.resolve_current_universe_name();
-        self.status = "loading data stores...".to_string();
-        match self
-            .client
-            .list_data_stores(
-                self.universe_id,
-                &ListQuery {
-                    show_deleted: true,
-                    ..Default::default()
-                },
-            )
-            .await
-        {
-            Ok(result) => {
-                self.stores.items = result.data_stores;
-                self.stores.selected = 0;
-                self.stores.marked.clear();
-                self.status = format!("{} data stores", self.stores.items.len());
-            }
-            Err(err) => {
-                self.status = self.datastore_error(err);
-            }
-        }
-    }
-
-    pub async fn delete_data_store(&mut self) {
-        let Some(store) = self.stores.items.get(self.stores.selected) else {
-            return;
-        };
-
-        self.status = "deleting data store...".to_string();
-        match self
-            .client
-            .delete_data_store(self.universe_id, &store.id)
-            .await
-        {
-            Ok(info) => {
-                self.status = "data store scheduled for deletion".to_string();
-                self.stores.items[self.stores.selected] = info;
-            }
-            Err(err) => {
-                self.status = self.datastore_error(err);
-            }
-        }
-    }
-
-    pub async fn undelete_data_store(&mut self) {
-        let Some(store) = self.stores.items.get(self.stores.selected) else {
-            return;
-        };
-
-        self.status = "restoring data store...".to_string();
-        match self
-            .client
-            .undelete_data_store(self.universe_id, &store.id)
-            .await
-        {
-            Ok(info) => {
-                self.status = "data store restored".to_string();
-                self.stores.items[self.stores.selected] = info;
-            }
-            Err(err) => {
-                self.status = self.datastore_error(err);
-            }
-        }
-    }
-
-    pub async fn bulk_delete_data_stores(&mut self) {
-        let mut indices: Vec<usize> = self.stores.marked.iter().copied().collect();
-        indices.sort_unstable();
-
-        let total = indices.len();
-        let mut errors = 0;
-
-        for (n, &i) in indices.iter().enumerate() {
-            let id = self.stores.items[i].id.clone();
-            self.status = format!("scheduling deletion {}/{total}...", n + 1);
-            match self.client.delete_data_store(self.universe_id, &id).await {
-                Ok(info) => self.stores.items[i] = info,
-                Err(_) => errors += 1,
-            }
-        }
-
-        self.stores.marked.clear();
-        self.status = if errors == 0 {
-            format!("scheduled {total} data stores for deletion")
-        } else {
-            format!(
-                "scheduled {} data stores for deletion, {errors} failed",
-                total - errors
-            )
-        };
-    }
-
-    pub async fn bulk_undelete_data_stores(&mut self) {
-        let mut indices: Vec<usize> = self.stores.marked.iter().copied().collect();
-        indices.sort_unstable();
-
-        let total = indices.len();
-        let mut errors = 0;
-
-        for (n, &i) in indices.iter().enumerate() {
-            let id = self.stores.items[i].id.clone();
-            self.status = format!("restoring {}/{total}...", n + 1);
-            match self.client.undelete_data_store(self.universe_id, &id).await {
-                Ok(info) => self.stores.items[i] = info,
-                Err(_) => errors += 1,
-            }
-        }
-
-        self.stores.marked.clear();
-        self.status = if errors == 0 {
-            format!("restored {total} data stores")
-        } else {
-            format!("restored {} data stores, {errors} failed", total - errors)
-        };
-    }
-
-    pub async fn load_entries(&mut self) {
-        self.entries.page_tokens = vec![None];
-        self.load_entries_page().await;
-    }
-
-    pub async fn load_next_entries_page(&mut self) {
-        let Some(token) = self.entries.next_page_token.clone() else {
-            return;
-        };
-        self.entries.page_tokens.push(Some(token));
-        self.load_entries_page().await;
-    }
-
-    pub async fn load_prev_entries_page(&mut self) {
-        if self.entries.page_tokens.len() <= 1 {
-            return;
-        }
-        self.entries.page_tokens.pop();
-        self.load_entries_page().await;
-    }
-
-    pub async fn load_entries_page(&mut self) {
-        let page_token = self.entries.page_tokens.last().cloned().flatten();
-
-        self.status = "loading entries...".to_string();
-        match self
-            .client
-            .list_entries(
-                self.universe_id,
-                &self.stores.data_store_id,
-                None,
-                &ListQuery {
-                    page_token: page_token.as_deref(),
-                    max_page_size: Some(256),
-                    ..Default::default()
-                },
-            )
-            .await
-        {
-            Ok(result) => {
-                self.entries.items = result.data_store_entries;
-                self.entries.selected = 0;
-                self.entries.marked.clear();
-                self.entries.next_page_token = result.next_page_token;
-                let page = self.entries.page_tokens.len();
-                self.status = format!("{} entries (page {page})", self.entries.items.len());
-                self.resolve_entry_usernames();
-            }
-            Err(err) => {
-                self.status = self.datastore_error(err);
-            }
-        }
-    }
-
-    pub async fn load_all_entries_for_search(&mut self) {
-        self.status = "loading all entries for search...".to_string();
-        let mut all = Vec::new();
-        let mut page_token: Option<String> = None;
-        loop {
-            match self
-                .client
-                .list_entries(
-                    self.universe_id,
-                    &self.stores.data_store_id,
-                    None,
-                    &ListQuery {
-                        page_token: page_token.as_deref(),
-                        max_page_size: Some(256),
-                        ..Default::default()
-                    },
-                )
-                .await
-            {
-                Ok(result) => {
-                    all.extend(result.data_store_entries);
-                    page_token = result.next_page_token.filter(|t| !t.is_empty());
-                    if page_token.is_none() {
-                        break;
-                    }
-                }
-                Err(err) => {
-                    self.status = self.datastore_error(err);
-                    return;
-                }
-            }
-        }
-        self.entries.items = all;
-        self.entries.selected = 0;
-        self.entries.marked.clear();
-        self.entries.next_page_token = None;
-        self.entries.page_tokens = vec![None];
-        self.status = format!("{} entries (search across whole store)", self.entries.items.len());
-        self.resolve_entry_usernames();
-    }
-
-    pub fn resolve_current_universe_name(&mut self) {
-        if self.universe_names.contains_key(&self.universe_id) {
-            return;
-        }
-
-        let client = self.client.clone();
-        let tx = self.universe_name_tx.clone();
-        let universe_id = self.universe_id;
-        tokio::spawn(async move {
-            if let Ok(info) = client.get_universe(universe_id).await {
-                let _ = tx.send((universe_id, info.display_name));
-            }
-        });
-    }
-
-    fn resolve_universe_names(&mut self) {
-        for &universe_id in &self.available_universes {
-            if self.universe_names.contains_key(&universe_id) {
-                continue;
-            }
-
-            let client = self.client.clone();
-            let tx = self.universe_name_tx.clone();
-            tokio::spawn(async move {
-                if let Ok(info) = client.get_universe(universe_id).await {
-                    let _ = tx.send((universe_id, info.display_name));
-                }
-            });
-        }
-    }
-
-    fn resolve_entry_usernames(&mut self) { self.entries.resolve_usernames(); }
-
     pub fn visible_universe_indices(&self) -> Vec<usize> {
-        if self.universe_select.search.value.is_empty() {
+        if self.universe_select.search.get_value().is_empty() {
             return (0..self.available_universes.len()).collect();
         }
 
-        let needle = self.universe_select.search.value.to_lowercase();
+        let needle = self.universe_select.search.get_value().to_lowercase();
+
         self.available_universes
             .iter()
             .enumerate()
@@ -788,7 +405,9 @@ impl App {
                     || self.ordered_entries.create_active
                     || self.ordered_entries.create_choosing
             }
-            Screen::OrderedValue => self.ordered_value.editing || self.ordered_value.increment_editing,
+            Screen::OrderedValue => {
+                self.ordered_value.editing || self.ordered_value.increment_editing
+            }
             Screen::MemoryStoreEntries => {
                 self.memory_entries.search_active
                     || self.memory_entries.create_active
@@ -808,40 +427,28 @@ impl App {
         }
     }
 
-    pub fn visible_entry_indices(&self) -> Vec<usize> { self.entries.visible_indices() }
+    pub fn visible_entry_indices(&self) -> Vec<usize> {
+        self.entries.visible_indices()
+    }
 
-    fn current_entry_index(&self) -> Option<usize> { self.entries.current_index() }
+    pub(crate) fn current_entry_index(&self) -> Option<usize> {
+        self.entries.current_index()
+    }
 
-    fn current_entry_scope_key(&self) -> Option<(String, String)> { self.entries.current_scope_key() }
+    pub(crate) fn current_entry_scope_key(&self) -> Option<(String, String)> {
+        self.entries.current_scope_key()
+    }
 
-    pub async fn load_value(&mut self) {
-        if self.value.source == ValueSource::MemoryStoreSortedMap {
-            return self.load_memory_value().await;
-        }
+    pub(crate) fn resolve_entry_usernames(&mut self) {
+        self.entries.resolve_usernames();
+    }
 
-        let Some((scope, key)) = self.current_entry_scope_key() else {
-            return;
-        };
+    pub fn visible_ordered_entry_indices(&self) -> Vec<usize> {
+        self.ordered_entries.visible_indices()
+    }
 
-        self.status = "loading value...".to_string();
-        match self
-            .client
-            .get_entry_with_revision(self.universe_id, &self.stores.data_store_id, &key, Some(&scope))
-            .await
-        {
-            Ok((value, revision)) => {
-                self.value.title = format!("{}/{} (scope: {scope})", self.stores.data_store_id, key);
-                self.value.text = serde_json::to_string_pretty(&value).unwrap_or_default();
-                self.value.revision = revision;
-                self.value.scroll = 0;
-                self.tree_editor = None;
-                self.value.source = ValueSource::DataStore;
-                self.status.clear();
-            }
-            Err(err) => {
-                self.status = self.datastore_error(err);
-            }
-        }
+    pub fn visible_memory_item_indices(&self) -> Vec<usize> {
+        self.memory_entries.visible_indices()
     }
 
     pub fn enter_tree_mode(&mut self) {
@@ -851,8 +458,8 @@ impl App {
     pub fn enter_tree_mode_for(&mut self, target: TreeTarget) {
         let source = match target {
             TreeTarget::Value => self.value.text.clone(),
-            TreeTarget::EntriesCreate => self.entries.create_value.value.clone(),
-            TreeTarget::MemoryCreate => self.memory_entries.create_value.value.clone(),
+            TreeTarget::EntriesCreate => self.entries.create_value.get_value().to_string(),
+            TreeTarget::MemoryCreate => self.memory_entries.create_value.get_value().to_string(),
         };
         let source = source.trim();
         let source = if source.is_empty() { "{}" } else { source };
@@ -874,911 +481,5 @@ impl App {
         self.tree_editor = None;
         self.pending_confirm = None;
         self.status.clear();
-    }
-
-    pub async fn refresh_tree(&mut self) {
-        let cursor = self.tree_editor.as_ref().map(|t| t.cursor()).unwrap_or(0);
-        self.load_value().await;
-        if self.status.is_empty() {
-            self.enter_tree_mode();
-            if let Some(editor) = &mut self.tree_editor {
-                editor.set_cursor(cursor);
-            }
-        }
-    }
-
-    pub async fn save_tree(&mut self) {
-        let Some(editor) = &self.tree_editor else {
-            return;
-        };
-        let json = serde_json::to_string_pretty(&editor.to_value()).unwrap_or_default();
-
-        match self.tree_target {
-            TreeTarget::Value => {
-                self.value.edit_text = json;
-                self.save_value().await;
-                if let Ok(value) = serde_json::from_str::<serde_json::Value>(&self.value.text) {
-                    self.tree_editor = Some(TreeEditor::new(&value));
-                    self.pending_confirm = None;
-                }
-            }
-            TreeTarget::EntriesCreate => {
-                self.entries.create_value.set(json);
-                self.exit_tree_mode();
-            }
-            TreeTarget::MemoryCreate => {
-                self.memory_entries.create_value.set(json);
-                self.exit_tree_mode();
-            }
-        }
-    }
-
-    pub async fn save_value(&mut self) {
-        if self.value.source == ValueSource::MemoryStoreSortedMap {
-            return self.save_memory_value().await;
-        }
-
-        let Some((scope, key)) = self.current_entry_scope_key() else {
-            return;
-        };
-
-        let value: serde_json::Value = match serde_json::from_str(&self.value.edit_text) {
-            Ok(value) => value,
-            Err(err) => {
-                self.status = format!("invalid JSON: {err}");
-                return;
-            }
-        };
-
-        self.status = "saving...".to_string();
-        match self
-            .client
-            .set_entry(
-                self.universe_id,
-                &self.stores.data_store_id,
-                &key,
-                Some(&scope),
-                &value,
-                self.value.revision.as_deref(),
-            )
-            .await
-        {
-            Ok(revision) => {
-                self.value.text = serde_json::to_string_pretty(&value).unwrap_or_default();
-                self.value.revision = revision;
-                self.value.scroll = 0;
-                self.status = "saved".to_string();
-            }
-            Err(err) if matches!(&err, roforgecloud_core::error::Error::Api { status, .. } if status.as_u16() == 409 || status.as_u16() == 412) =>
-            {
-                self.load_value().await;
-                self.status = "conflict: entry changed on server — reloaded latest value, your edit was discarded".to_string();
-            }
-            Err(err) => {
-                self.status = self.datastore_error(err);
-            }
-        }
-    }
-
-    pub async fn save_memory_value(&mut self) {
-        let value: serde_json::Value = match serde_json::from_str(&self.value.edit_text) {
-            Ok(value) => value,
-            Err(err) => {
-                self.status = format!("invalid JSON: {err}");
-                return;
-            }
-        };
-
-        self.status = "saving...".to_string();
-        match self
-            .client
-            .update_sorted_map_item(
-                self.universe_id,
-                &self.memory_store_input.id,
-                &self.memory_item_editing_id,
-                &value,
-                self.memory_item_ttl_seconds,
-                self.value.revision.as_deref(),
-            )
-            .await
-        {
-            Ok(item) => {
-                self.value.text = serde_json::to_string_pretty(&item.value).unwrap_or_default();
-                self.value.revision = item.etag.clone();
-                self.value.scroll = 0;
-                if let Some(cached) = self.memory_entries.items.iter_mut().find(|i| i.id == item.id) {
-                    cached.value = item.value;
-                    cached.etag = item.etag;
-                    cached.expire_time = item.expire_time;
-                }
-                self.status = "saved".to_string();
-            }
-            Err(err) if matches!(&err, roforgecloud_core::error::Error::Api { status, .. } if status.as_u16() == 409 || status.as_u16() == 412) =>
-            {
-                self.load_memory_value().await;
-                self.status = "conflict: item changed on server — reloaded latest value, your edit was discarded".to_string();
-            }
-            Err(err) => {
-                self.status = self.datastore_error(err);
-            }
-        }
-    }
-
-    pub async fn create_entry(&mut self) {
-        let id = self.entries.create_id.value.trim();
-        if id.is_empty() {
-            self.status = "entry id cannot be empty".to_string();
-            return;
-        }
-        let (scope, key) = match id.split_once('/') {
-            Some((scope, key)) => (scope.to_string(), key.to_string()),
-            None => ("global".to_string(), id.to_string()),
-        };
-
-        let value: serde_json::Value = match serde_json::from_str(&self.entries.create_value.value)
-        {
-            Ok(value) => value,
-            Err(err) => {
-                self.status = format!("invalid JSON: {err}");
-                return;
-            }
-        };
-
-        self.status = "creating...".to_string();
-        match self
-            .client
-            .create_entry(
-                self.universe_id,
-                &self.stores.data_store_id,
-                &key,
-                Some(&scope),
-                &value,
-            )
-            .await
-        {
-            Ok(()) => {
-                self.entries.create_id.clear();
-                self.entries.create_value.clear();
-                self.entries.create_active = false;
-                self.status = "created".to_string();
-                self.load_entries_page().await;
-            }
-            Err(err) => {
-                self.status = self.datastore_error(err);
-            }
-        }
-    }
-
-    pub async fn delete_entry(&mut self) {
-        let Some(index) = self.current_entry_index() else {
-            return;
-        };
-        let Some((scope, key)) = self.current_entry_scope_key() else {
-            return;
-        };
-
-        self.status = "deleting...".to_string();
-        match self
-            .client
-            .delete_entry(self.universe_id, &self.stores.data_store_id, &key, Some(&scope))
-            .await
-        {
-            Ok(()) => {
-                self.entries.items.remove(index);
-                let visible = self.visible_entry_indices().len();
-                if self.entries.selected >= visible {
-                    self.entries.selected = visible.saturating_sub(1);
-                }
-                if self.screen == Screen::Value {
-                    self.exit_tree_mode();
-                    self.screen = Screen::Entries;
-                }
-                self.status = "deleted".to_string();
-            }
-            Err(err) => {
-                self.status = self.datastore_error(err);
-            }
-        }
-    }
-
-    pub async fn bulk_delete_entries(&mut self) {
-        let mut indices: Vec<usize> = self.entries.marked.iter().copied().collect();
-        indices.sort_unstable();
-
-        let targets: Vec<(usize, String, String)> = indices
-            .into_iter()
-            .map(|i| {
-                let entry = &self.entries.items[i];
-                let (scope, key) = match entry.id.split_once('/') {
-                    Some((scope, key)) => (scope.to_string(), key.to_string()),
-                    None => ("global".to_string(), entry.id.clone()),
-                };
-                (i, scope, key)
-            })
-            .collect();
-
-        if targets.is_empty() {
-            self.status = "no entries to delete".to_string();
-            return;
-        }
-
-        let total = targets.len();
-        let mut deleted_indices = Vec::new();
-        let mut errors = 0;
-
-        for (i, scope, key) in &targets {
-            self.status = format!("deleting {}/{total}...", deleted_indices.len() + errors + 1);
-            match self
-                .client
-                .delete_entry(self.universe_id, &self.stores.data_store_id, key, Some(scope))
-                .await
-            {
-                Ok(()) => deleted_indices.push(*i),
-                Err(_) => errors += 1,
-            }
-        }
-
-        for &i in deleted_indices.iter().rev() {
-            self.entries.items.remove(i);
-        }
-
-        self.entries.marked.clear();
-
-        let visible = self.visible_entry_indices().len();
-        if self.entries.selected >= visible {
-            self.entries.selected = visible.saturating_sub(1);
-        }
-
-        self.status = if errors == 0 {
-            format!("deleted {} entries", deleted_indices.len())
-        } else {
-            format!("deleted {} entries, {errors} failed", deleted_indices.len())
-        };
-    }
-
-    pub async fn load_ordered_entries(&mut self) {
-        self.ordered_entries.page_tokens = vec![None];
-        self.load_ordered_entries_page().await;
-    }
-
-    pub async fn load_next_ordered_entries_page(&mut self) {
-        let Some(token) = self.ordered_entries.next_page_token.clone() else {
-            return;
-        };
-        self.ordered_entries.page_tokens.push(Some(token));
-        self.load_ordered_entries_page().await;
-    }
-
-    pub async fn load_prev_ordered_entries_page(&mut self) {
-        if self.ordered_entries.page_tokens.len() <= 1 {
-            return;
-        }
-        self.ordered_entries.page_tokens.pop();
-        self.load_ordered_entries_page().await;
-    }
-
-    pub async fn load_ordered_entries_page(&mut self) {
-        let page_token = self.ordered_entries.page_tokens.last().cloned().flatten();
-
-        self.status = "loading entries...".to_string();
-        match self
-            .client
-            .list_ordered_entries(
-                self.universe_id,
-                &self.ordered_store_input.store_id.value,
-                &self.ordered_store_input.scope.value,
-                &ListQuery {
-                    page_token: page_token.as_deref(),
-                    max_page_size: Some(256),
-                    ..Default::default()
-                },
-            )
-            .await
-        {
-            Ok(result) => {
-                self.ordered_entries.items = result.ordered_data_store_entries;
-                self.ordered_entries.selected = 0;
-                self.ordered_entries.marked.clear();
-                self.ordered_entries.next_page_token = result.next_page_token;
-                let page = self.ordered_entries.page_tokens.len();
-                self.status = format!("{} entries (page {page})", self.ordered_entries.items.len());
-            }
-            Err(err) => {
-                self.status = self.datastore_error(err);
-            }
-        }
-    }
-
-    pub async fn load_all_ordered_entries_for_search(&mut self) {
-        self.status = "loading all entries for search...".to_string();
-        let mut all = Vec::new();
-        let mut page_token: Option<String> = None;
-        loop {
-            match self
-                .client
-                .list_ordered_entries(
-                    self.universe_id,
-                    &self.ordered_store_input.store_id.value,
-                    &self.ordered_store_input.scope.value,
-                    &ListQuery {
-                        page_token: page_token.as_deref(),
-                        max_page_size: Some(256),
-                        ..Default::default()
-                    },
-                )
-                .await
-            {
-                Ok(result) => {
-                    all.extend(result.ordered_data_store_entries);
-                    page_token = result.next_page_token.filter(|t| !t.is_empty());
-                    if page_token.is_none() {
-                        break;
-                    }
-                }
-                Err(err) => {
-                    self.status = self.datastore_error(err);
-                    return;
-                }
-            }
-        }
-        self.ordered_entries.items = all;
-        self.ordered_entries.selected = 0;
-        self.ordered_entries.marked.clear();
-        self.ordered_entries.next_page_token = None;
-        self.ordered_entries.page_tokens = vec![None];
-        self.status = format!(
-            "{} entries (search across whole store)",
-            self.ordered_entries.items.len()
-        );
-    }
-
-    pub fn visible_ordered_entry_indices(&self) -> Vec<usize> {
-        self.ordered_entries.visible_indices()
-    }
-
-    pub async fn load_ordered_value(&mut self) {
-        let Some(index) = self.ordered_entries.current_index() else {
-            return;
-        };
-        let id = self.ordered_entries.items[index].id.clone();
-
-        self.status = "loading value...".to_string();
-        match self
-            .client
-            .get_ordered_entry(
-                self.universe_id,
-                &self.ordered_store_input.store_id.value,
-                &self.ordered_store_input.scope.value,
-                &id,
-            )
-            .await
-        {
-            Ok(entry) => {
-                self.ordered_value.title = format!(
-                    "{}/{id} (scope: {})",
-                    self.ordered_store_input.store_id.value, self.ordered_store_input.scope.value
-                );
-                self.ordered_value.value = entry.value;
-                self.ordered_value.editing = false;
-                self.ordered_value.increment_editing = false;
-                self.status.clear();
-            }
-            Err(err) => {
-                self.status = self.datastore_error(err);
-            }
-        }
-    }
-
-    pub async fn save_ordered_value(&mut self) {
-        let Some(index) = self.ordered_entries.current_index() else {
-            return;
-        };
-        let id = self.ordered_entries.items[index].id.clone();
-
-        let value: f64 = match self.ordered_value.edit.parse() {
-            Ok(value) => value,
-            Err(_) => {
-                self.status = "invalid number".to_string();
-                return;
-            }
-        };
-
-        self.status = "saving...".to_string();
-        match self
-            .client
-            .update_ordered_entry(
-                self.universe_id,
-                &self.ordered_store_input.store_id.value,
-                &self.ordered_store_input.scope.value,
-                &id,
-                value,
-            )
-            .await
-        {
-            Ok(entry) => {
-                self.ordered_value.value = entry.value;
-                self.ordered_entries.items[index].value = entry.value;
-                self.ordered_value.editing = false;
-                self.status = "saved".to_string();
-            }
-            Err(err) => {
-                self.status = self.datastore_error(err);
-            }
-        }
-    }
-
-    pub async fn increment_ordered_entry(&mut self) {
-        let Some(index) = self.ordered_entries.current_index() else {
-            return;
-        };
-        let id = self.ordered_entries.items[index].id.clone();
-
-        let amount: f64 = match self.ordered_value.increment_edit.parse() {
-            Ok(amount) => amount,
-            Err(_) => {
-                self.status = "invalid number".to_string();
-                return;
-            }
-        };
-
-        self.status = "incrementing...".to_string();
-        match self
-            .client
-            .increment_ordered_entry(
-                self.universe_id,
-                &self.ordered_store_input.store_id.value,
-                &self.ordered_store_input.scope.value,
-                &id,
-                amount,
-            )
-            .await
-        {
-            Ok(entry) => {
-                self.ordered_value.value = entry.value;
-                self.ordered_entries.items[index].value = entry.value;
-                self.ordered_value.increment_editing = false;
-                self.status = "incremented".to_string();
-            }
-            Err(err) => {
-                self.status = self.datastore_error(err);
-            }
-        }
-    }
-
-    pub async fn delete_ordered_entry(&mut self) {
-        let Some(index) = self.ordered_entries.current_index() else {
-            return;
-        };
-        let id = self.ordered_entries.items[index].id.clone();
-
-        self.status = "deleting...".to_string();
-        match self
-            .client
-            .delete_ordered_entry(
-                self.universe_id,
-                &self.ordered_store_input.store_id.value,
-                &self.ordered_store_input.scope.value,
-                &id,
-            )
-            .await
-        {
-            Ok(()) => {
-                self.ordered_entries.items.remove(index);
-                let visible = self.visible_ordered_entry_indices().len();
-                if self.ordered_entries.selected >= visible {
-                    self.ordered_entries.selected = visible.saturating_sub(1);
-                }
-                if self.screen == Screen::OrderedValue {
-                    self.screen = Screen::OrderedEntries;
-                }
-                self.status = "deleted".to_string();
-            }
-            Err(err) => {
-                self.status = self.datastore_error(err);
-            }
-        }
-    }
-
-    pub async fn bulk_delete_ordered_entries(&mut self) {
-        let mut indices: Vec<usize> = self.ordered_entries.marked.iter().copied().collect();
-        indices.sort_unstable();
-
-        let total = indices.len();
-        if total == 0 {
-            self.status = "no entries to delete".to_string();
-            return;
-        }
-
-        let mut deleted_indices = Vec::new();
-        let mut errors = 0;
-
-        for &i in &indices {
-            let id = self.ordered_entries.items[i].id.clone();
-            self.status = format!("deleting {}/{total}...", deleted_indices.len() + errors + 1);
-            match self
-                .client
-                .delete_ordered_entry(
-                    self.universe_id,
-                    &self.ordered_store_input.store_id.value,
-                    &self.ordered_store_input.scope.value,
-                    &id,
-                )
-                .await
-            {
-                Ok(()) => deleted_indices.push(i),
-                Err(_) => errors += 1,
-            }
-        }
-
-        for &i in deleted_indices.iter().rev() {
-            self.ordered_entries.items.remove(i);
-        }
-
-        self.ordered_entries.marked.clear();
-
-        let visible = self.visible_ordered_entry_indices().len();
-        if self.ordered_entries.selected >= visible {
-            self.ordered_entries.selected = visible.saturating_sub(1);
-        }
-
-        self.status = if errors == 0 {
-            format!("deleted {} entries", deleted_indices.len())
-        } else {
-            format!("deleted {} entries, {errors} failed", deleted_indices.len())
-        };
-    }
-
-    pub async fn create_ordered_entry(&mut self) {
-        let id = self.ordered_entries.create_id.value.trim();
-        if id.is_empty() || id.len() > 63 {
-            self.status = "entry id must be 1-63 characters".to_string();
-            return;
-        }
-        let value: f64 = match self.ordered_entries.create_value.value.parse() {
-            Ok(value) => value,
-            Err(_) => {
-                self.status = "invalid number".to_string();
-                return;
-            }
-        };
-
-        self.status = "creating...".to_string();
-        match self
-            .client
-            .create_ordered_entry(
-                self.universe_id,
-                &self.ordered_store_input.store_id.value,
-                &self.ordered_store_input.scope.value,
-                id,
-                value,
-            )
-            .await
-        {
-            Ok(_) => {
-                self.ordered_entries.create_id.clear();
-                self.ordered_entries.create_value.clear();
-                self.ordered_entries.create_active = false;
-                self.status = "created".to_string();
-                self.load_ordered_entries_page().await;
-            }
-            Err(err) => {
-                self.status = self.datastore_error(err);
-            }
-        }
-    }
-
-    pub async fn publish_message(&mut self) {
-        if self.messaging.topic.value.is_empty() {
-            self.status = "topic cannot be empty".to_string();
-            return;
-        }
-
-        self.status = "publishing...".to_string();
-        match self
-            .client
-            .publish_message(
-                self.universe_id,
-                &self.messaging.topic.value,
-                &self.messaging.message.value,
-            )
-            .await
-        {
-            Ok(()) => {
-                self.status = format!("published to '{}'", self.messaging.topic.value);
-            }
-            Err(err) => {
-                self.status = format!("error: {err}");
-            }
-        }
-    }
-
-    pub async fn load_memory_items(&mut self) {
-        self.memory_entries.page_tokens = vec![None];
-        self.load_memory_items_page().await;
-    }
-
-    pub async fn load_next_memory_items_page(&mut self) {
-        let Some(token) = self.memory_entries.next_page_token.clone() else {
-            return;
-        };
-        self.memory_entries.page_tokens.push(Some(token));
-        self.load_memory_items_page().await;
-    }
-
-    pub async fn load_prev_memory_items_page(&mut self) {
-        if self.memory_entries.page_tokens.len() <= 1 {
-            return;
-        }
-        self.memory_entries.page_tokens.pop();
-        self.load_memory_items_page().await;
-    }
-
-    pub async fn load_memory_items_page(&mut self) {
-        let page_token = self.memory_entries.page_tokens.last().cloned().flatten();
-
-        self.status = "loading items...".to_string();
-        match self
-            .client
-            .list_sorted_map_items(
-                self.universe_id,
-                &self.memory_store_input.id,
-                &ListQuery {
-                    page_token: page_token.as_deref(),
-                    max_page_size: Some(256),
-                    ..Default::default()
-                },
-            )
-            .await
-        {
-            Ok(result) => {
-                self.memory_entries.items = result.items;
-                self.memory_entries.selected = 0;
-                self.memory_entries.marked.clear();
-                self.memory_entries.next_page_token =
-                    result.next_page_token.filter(|t| !t.is_empty());
-                let page = self.memory_entries.page_tokens.len();
-                self.status = format!("{} items (page {page})", self.memory_entries.items.len());
-            }
-            Err(err) => {
-                self.status = self.datastore_error(err);
-            }
-        }
-    }
-
-    pub async fn load_all_memory_items_for_search(&mut self) {
-        self.status = "loading all items for search...".to_string();
-        let mut all = Vec::new();
-        let mut page_token: Option<String> = None;
-        loop {
-            match self
-                .client
-                .list_sorted_map_items(
-                    self.universe_id,
-                    &self.memory_store_input.id,
-                    &ListQuery {
-                        page_token: page_token.as_deref(),
-                        max_page_size: Some(256),
-                        ..Default::default()
-                    },
-                )
-                .await
-            {
-                Ok(result) => {
-                    all.extend(result.items);
-                    page_token = result.next_page_token.filter(|t| !t.is_empty());
-                    if page_token.is_none() {
-                        break;
-                    }
-                }
-                Err(err) => {
-                    self.status = self.datastore_error(err);
-                    return;
-                }
-            }
-        }
-        self.memory_entries.items = all;
-        self.memory_entries.selected = 0;
-        self.memory_entries.marked.clear();
-        self.memory_entries.next_page_token = None;
-        self.memory_entries.page_tokens = vec![None];
-        self.status = format!(
-            "{} items (search across whole sorted map)",
-            self.memory_entries.items.len()
-        );
-    }
-
-    pub fn visible_memory_item_indices(&self) -> Vec<usize> {
-        self.memory_entries.visible_indices()
-    }
-
-    pub async fn load_memory_value(&mut self) {
-        let Some(index) = self.memory_entries.current_index() else {
-            return;
-        };
-        let id = self.memory_entries.items[index].id.clone();
-
-        self.status = "loading value...".to_string();
-        match self
-            .client
-            .get_sorted_map_item(self.universe_id, &self.memory_store_input.id, &id)
-            .await
-        {
-            Ok(item) => {
-                let expire = item.expire_time.clone().unwrap_or_else(|| "—".to_string());
-                self.value.title =
-                    format!("{}/{id} (expires: {expire})", self.memory_store_input.id);
-                self.value.text = serde_json::to_string_pretty(&item.value).unwrap_or_default();
-                self.value.revision = item.etag;
-                self.value.scroll = 0;
-                self.tree_editor = None;
-                self.value.source = ValueSource::MemoryStoreSortedMap;
-                self.memory_item_editing_id = id;
-                self.memory_item_ttl_seconds = 3600;
-                self.screen = Screen::Value;
-                self.status.clear();
-            }
-            Err(err) => {
-                self.status = self.datastore_error(err);
-            }
-        }
-    }
-
-    pub async fn create_memory_item(&mut self) {
-        let id = self.memory_entries.create_id.value.trim();
-        if id.is_empty() || id.len() > 63 {
-            self.status = "item id must be 1-63 characters".to_string();
-            return;
-        }
-        let value: serde_json::Value = match serde_json::from_str(&self.memory_entries.create_value.value) {
-            Ok(value) => value,
-            Err(err) => {
-                self.status = format!("invalid JSON: {err}");
-                return;
-            }
-        };
-        let ttl: u64 = match self.memory_entries.create_ttl.value.parse() {
-            Ok(ttl) => ttl,
-            Err(_) => {
-                self.status = "invalid ttl".to_string();
-                return;
-            }
-        };
-
-        self.status = "creating...".to_string();
-        match self
-            .client
-            .create_sorted_map_item(
-                self.universe_id,
-                &self.memory_store_input.id,
-                id,
-                &value,
-                ttl,
-            )
-            .await
-        {
-            Ok(_) => {
-                self.memory_entries.create_id.clear();
-                self.memory_entries.create_value.clear();
-                self.memory_entries.create_ttl.set("3600");
-                self.memory_entries.create_active = false;
-                self.status = "created".to_string();
-                self.load_memory_items_page().await;
-            }
-            Err(err) => {
-                self.status = self.datastore_error(err);
-            }
-        }
-    }
-
-    pub async fn delete_memory_item(&mut self) {
-        let Some(index) = self.memory_entries.current_index() else {
-            return;
-        };
-        let id = self.memory_entries.items[index].id.clone();
-
-        self.status = "deleting...".to_string();
-        match self
-            .client
-            .delete_sorted_map_item(self.universe_id, &self.memory_store_input.id, &id)
-            .await
-        {
-            Ok(()) => {
-                self.memory_entries.items.remove(index);
-                let visible = self.visible_memory_item_indices().len();
-                if self.memory_entries.selected >= visible {
-                    self.memory_entries.selected = visible.saturating_sub(1);
-                }
-                if self.screen == Screen::Value {
-                    self.screen = Screen::MemoryStoreEntries;
-                }
-                self.status = "deleted".to_string();
-            }
-            Err(err) => {
-                self.status = self.datastore_error(err);
-            }
-        }
-    }
-
-    pub async fn bulk_delete_memory_items(&mut self) {
-        let mut indices: Vec<usize> = self.memory_entries.marked.iter().copied().collect();
-        indices.sort_unstable();
-
-        let total = indices.len();
-        if total == 0 {
-            self.status = "no items to delete".to_string();
-            return;
-        }
-
-        let mut deleted_indices = Vec::new();
-        let mut errors = 0;
-
-        for &i in &indices {
-            let id = self.memory_entries.items[i].id.clone();
-            self.status = format!("deleting {}/{total}...", deleted_indices.len() + errors + 1);
-            match self
-                .client
-                .delete_sorted_map_item(self.universe_id, &self.memory_store_input.id, &id)
-                .await
-            {
-                Ok(()) => deleted_indices.push(i),
-                Err(_) => errors += 1,
-            }
-        }
-
-        for &i in deleted_indices.iter().rev() {
-            self.memory_entries.items.remove(i);
-        }
-
-        self.memory_entries.marked.clear();
-
-        let visible = self.visible_memory_item_indices().len();
-        if self.memory_entries.selected >= visible {
-            self.memory_entries.selected = visible.saturating_sub(1);
-        }
-
-        self.status = if errors == 0 {
-            format!("deleted {} items", deleted_indices.len())
-        } else {
-            format!("deleted {} items, {errors} failed", deleted_indices.len())
-        };
-    }
-
-    pub async fn save_memory_ttl(&mut self) {
-        let Some(index) = self.memory_entries.current_index() else {
-            return;
-        };
-        let item = self.memory_entries.items[index].clone();
-
-        let ttl: u64 = match self.memory_entries.ttl_edit.value.parse() {
-            Ok(ttl) => ttl,
-            Err(_) => {
-                self.status = "invalid ttl".to_string();
-                return;
-            }
-        };
-
-        self.status = "saving...".to_string();
-        match self
-            .client
-            .update_sorted_map_item(
-                self.universe_id,
-                &self.memory_store_input.id,
-                &item.id,
-                &item.value,
-                ttl,
-                item.etag.as_deref(),
-            )
-            .await
-        {
-            Ok(updated) => {
-                self.memory_entries.items[index].etag = updated.etag;
-                self.memory_entries.items[index].expire_time = updated.expire_time;
-                self.memory_entries.ttl_editing = false;
-                self.status = "saved".to_string();
-            }
-            Err(err) => {
-                self.status = self.datastore_error(err);
-            }
-        }
     }
 }

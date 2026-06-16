@@ -8,7 +8,7 @@ use ratatui::Frame;
 use ratatui_which_key::Keymap;
 use roforgecloud_core::opencloud::ordered_datastore::OrderedDataStoreEntry;
 
-use crate::app::{Action, App, OrderedCreateField, PendingConfirm, Screen, TextField};
+use crate::app::{Action, App, OrderedCreateField, PendingConfirm, Screen, TextField, TextFieldExt};
 use crate::update::{self, Act, Category, Scope, bind, dispatch, handle_pending_confirm, handle_text_field_key, list_nav_key, quit_key};
 use crate::ui::{HIGHLIGHT_STYLE, centered_rect_lines, field_box, field_paragraph_box};
 
@@ -46,10 +46,10 @@ impl State {
     }
 
     pub(crate) fn visible_indices(&self) -> Vec<usize> {
-        if self.search.value.is_empty() {
+        if self.search.get_value().is_empty() {
             return (0..self.items.len()).collect();
         }
-        let needle = self.search.value.to_lowercase();
+        let needle = self.search.get_value().to_lowercase();
         self.items
             .iter()
             .enumerate()
@@ -173,7 +173,7 @@ pub(crate) fn handle_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> O
     }
 
     if matches!(code, KeyCode::Esc | KeyCode::Backspace | KeyCode::Char('h')) {
-        if !app.ordered_entries.search.value.is_empty() {
+        if !app.ordered_entries.search.get_value().is_empty() {
             app.ordered_entries.search.clear();
             app.ordered_entries.selected = 0;
             app.status.clear();
@@ -207,25 +207,25 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
     let store_label = match app.universe_names.get(&app.universe_id) {
         Some(name) => format!(
             "{} (scope: {}, universe {} ({name}))",
-            app.ordered_store_input.store_id.value, app.ordered_store_input.scope.value, app.universe_id
+            app.ordered_store_input.store_id.get_value(), app.ordered_store_input.scope.get_value(), app.universe_id
         ),
         None => format!(
             "{} (scope: {})",
-            app.ordered_store_input.store_id.value, app.ordered_store_input.scope.value
+            app.ordered_store_input.store_id.get_value(), app.ordered_store_input.scope.get_value()
         ),
     };
-    let title = if app.ordered_entries.search.value.is_empty() {
+    let title = if app.ordered_entries.search.get_value().is_empty() {
         if app.ordered_entries.marked.is_empty() {
             store_label
         } else {
             format!("{store_label} ({} selected)", app.ordered_entries.marked.len())
         }
     } else if app.ordered_entries.marked.is_empty() {
-        format!("{store_label} (search: {})", app.ordered_entries.search.value)
+        format!("{store_label} (search: {})", app.ordered_entries.search.get_value())
     } else {
         format!(
             "{store_label} (search: {}, {} selected)",
-            app.ordered_entries.search.value,
+            app.ordered_entries.search.get_value(),
             app.ordered_entries.marked.len()
         )
     };

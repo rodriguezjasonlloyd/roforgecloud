@@ -4,6 +4,7 @@ use ratatui::widgets::{Block, Borders};
 use ratatui::Frame;
 
 use crate::app::{Action, App, MessagingField, Screen, TextField};
+use crate::ui;
 use crate::update;
 
 pub(crate) struct State {
@@ -73,6 +74,6 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
     let topic_active = app.messaging.field == MessagingField::Topic;
     let message_active = app.messaging.field == MessagingField::Message;
 
-    crate::ui::field_box(frame, rows[0], "Topic", &app.messaging.topic, topic_active);
-    crate::ui::field_paragraph_box(frame, rows[1], "Message", &app.messaging.message, message_active);
+    ui::field_box(frame, rows[0], "Topic", &app.messaging.topic, topic_active);
+    ui::field_paragraph_box(frame, rows[1], "Message", &app.messaging.message, message_active);
 }

@@ -7,6 +7,7 @@ use ratatui_which_key::Keymap;
 use crate::app::{
     Action, App, Screen, UNIVERSE_CHOICE_ENTER_ID, UNIVERSE_CHOICE_ITEMS, UNIVERSE_CHOICE_LIST_ALL,
 };
+use crate::ui::HIGHLIGHT_STYLE;
 use crate::update::{self, Act, Category, Scope};
 
 pub(crate) struct State {
@@ -45,7 +46,7 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
     let list = List::new(items)
         .block(Block::default().borders(Borders::ALL).title("Universe"))
-        .highlight_style(crate::ui::HIGHLIGHT_STYLE);
+        .highlight_style(HIGHLIGHT_STYLE);
 
     let mut state = ListState::default();
     state.select(Some(app.universe_choice.selected));

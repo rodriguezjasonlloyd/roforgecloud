@@ -9,9 +9,9 @@ use ratatui::Frame;
 use ratatui_which_key::Keymap;
 use roforgecloud_core::opencloud::datastore::DataStoreInfo;
 
-use crate::app::{Action, App, PendingConfirm, Screen, TextField};
-use crate::update::{self, Act, Category, Scope, bind, back_key, dispatch, handle_pending_confirm, handle_text_field_key, list_nav_key, quit_key};
-use crate::ui::{HIGHLIGHT_STYLE, field_box};
+use crate::app::{Action, App, EntriesCreateField, PendingConfirm, Screen, TextField, TextFieldExt};
+use crate::update::{Act, Category, Scope, bind, back_key, dispatch, handle_pending_confirm, handle_text_field_key, list_nav_key, quit_key};
+use crate::ui::{HIGHLIGHT_STYLE, centered_rect_lines, field_box};
 
 pub(crate) struct State {
     pub items: Vec<DataStoreInfo>,
@@ -155,7 +155,6 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_new_popup(frame: &mut Frame, app: &App, area: Rect) {
-    use crate::ui::centered_rect_lines;
     let popup = centered_rect_lines(50, 5, area);
     frame.render_widget(Clear, popup);
     let block = Block::default().borders(Borders::ALL).title("Create entry in new store");
@@ -203,7 +202,7 @@ fn undelete(app: &mut App) -> Option<Action> {
 fn handle_new_key(app: &mut App, code: KeyCode) -> Option<Action> {
     match code {
         KeyCode::Enter => {
-            let id = app.stores.new_id.value.trim().to_string();
+            let id = app.stores.new_id.get_value().trim().to_string();
             if id.is_empty() {
                 return None;
             }
@@ -217,7 +216,7 @@ fn handle_new_key(app: &mut App, code: KeyCode) -> Option<Action> {
             app.entries.search.clear();
             app.entries.create_id.clear();
             app.entries.create_value.clear();
-            app.entries.create_field = crate::app::EntriesCreateField::Id;
+            app.entries.create_field = EntriesCreateField::Id;
             app.entries.create_active = true;
             app.status.clear();
             app.screen = Screen::Entries;

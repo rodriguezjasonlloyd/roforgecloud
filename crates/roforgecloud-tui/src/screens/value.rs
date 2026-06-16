@@ -4,8 +4,9 @@ use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use ratatui::Frame;
 use ratatui_which_key::Keymap;
 
-use crate::app::{Action, App, PendingConfirm, Screen, ValueSource};
+use crate::app::{Action, App, PendingConfirm, Screen, TextFieldExt, ValueSource};
 use crate::update::{Act, Category, Scope, bind, back_key, dispatch, handle_pending_confirm, handle_text_field_key, handle_tree_key, quit_key};
+use crate::json_highlight;
 use crate::ui::draw_tree;
 
 pub(crate) struct State {
@@ -77,7 +78,7 @@ pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
                 if app.value.source != ValueSource::MemoryStoreSortedMap {
                     return None;
                 }
-                app.memory_entries.ttl_edit.set(app.memory_item_ttl_seconds.to_string());
+                app.memory_entries.ttl_edit.set_value(app.memory_item_ttl_seconds.to_string());
                 app.memory_entries.ttl_editing = true;
                 None
             },
@@ -152,7 +153,7 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    let paragraph = Paragraph::new(crate::json_highlight::highlight(&app.value.text))
+    let paragraph = Paragraph::new(json_highlight::highlight(&app.value.text))
         .block(Block::default().borders(Borders::ALL).title(app.value.title.clone()))
         .wrap(Wrap { trim: false })
         .scroll((app.value.scroll, 0));

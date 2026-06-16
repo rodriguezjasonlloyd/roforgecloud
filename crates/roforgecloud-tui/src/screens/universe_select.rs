@@ -6,7 +6,8 @@ use ratatui::widgets::{Block, Borders, List, ListItem, ListState};
 use ratatui::Frame;
 use ratatui_which_key::Keymap;
 
-use crate::app::{Action, App, Screen, TextField};
+use crate::app::{Action, App, Screen, TextField, TextFieldExt};
+use crate::ui::HIGHLIGHT_STYLE;
 use crate::update::{self, Act, Category, Scope};
 
 pub(crate) struct State {
@@ -68,7 +69,7 @@ pub(crate) fn handle_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> O
     }
 
     if matches!(code, KeyCode::Esc | KeyCode::Backspace | KeyCode::Char('h')) {
-        if !app.universe_select.search.value.is_empty() {
+        if !app.universe_select.search.get_value().is_empty() {
             app.universe_select.search.clear();
             app.universe_select.selected = 0;
             app.status.clear();
@@ -100,15 +101,15 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let title = if app.universe_select.search.value.is_empty() {
+    let title = if app.universe_select.search.get_value().is_empty() {
         "Select Universe".to_string()
     } else {
-        format!("Select Universe (search: {})", app.universe_select.search.value)
+        format!("Select Universe (search: {})", app.universe_select.search.get_value())
     };
 
     let list = List::new(items)
         .block(Block::default().borders(Borders::ALL).title(title))
-        .highlight_style(crate::ui::HIGHLIGHT_STYLE);
+        .highlight_style(HIGHLIGHT_STYLE);
 
     let mut state = ListState::default();
     if !visible.is_empty() {

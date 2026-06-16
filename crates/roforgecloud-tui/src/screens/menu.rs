@@ -5,6 +5,7 @@ use ratatui::Frame;
 use ratatui_which_key::Keymap;
 
 use crate::app::{Action, App, Screen, SERVICE_ACCOUNT, SERVICE_DATA_STORES, SERVICE_MEMORY_STORES, SERVICE_MESSAGING, SERVICE_ORDERED_DATA_STORES};
+use crate::ui::HIGHLIGHT_STYLE;
 use crate::update::{self, Act, Category, Scope};
 
 pub(crate) struct State {
@@ -65,7 +66,7 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
     let list = List::new(items)
         .block(Block::default().borders(Borders::ALL).title("roforgecloud"))
-        .highlight_style(crate::ui::HIGHLIGHT_STYLE);
+        .highlight_style(HIGHLIGHT_STYLE);
 
     let mut state = ListState::default();
     state.select(Some(app.menu.selected));

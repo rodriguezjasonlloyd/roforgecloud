@@ -1,3 +1,4 @@
+mod api;
 mod app;
 mod json_highlight;
 mod json_tree;
@@ -5,7 +6,7 @@ mod screens;
 mod tree_editor;
 mod ui;
 mod update;
-mod userlookup;
+mod user_lookup;
 
 use std::io;
 use std::time::Duration;
@@ -19,7 +20,7 @@ use crossterm::terminal::{
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
-use app::{Action, App};
+use app::{Action, App, TextFieldExt};
 use roforgecloud_core::auth;
 use roforgecloud_core::oauth::{self, OAuthClient};
 use roforgecloud_core::opencloud::{Credentials, OpenCloudClient};
@@ -94,7 +95,6 @@ async fn build_client(
 }
 
 async fn run<B: ratatui::backend::Backend + io::Write>(
-
     terminal: &mut Terminal<B>,
     app: &mut App,
 ) -> anyhow::Result<()>
@@ -104,15 +104,15 @@ where
     loop {
         app.check_confirm_timeout();
 
-        while let Ok(resolved) = app.username_rx.try_recv() {
-            app.usernames.extend(resolved);
+        while let Ok(resolved) = app.entries.username_rx.try_recv() {
+            app.entries.usernames.extend(resolved);
         }
         while let Ok((universe_id, name)) = app.universe_name_rx.try_recv() {
             app.universe_names.insert(universe_id, name);
         }
 
         let area = terminal.size()?;
-        app.value_viewport_height = area.height.saturating_sub(6);
+        app.value.viewport_height = area.height.saturating_sub(6);
 
         terminal.draw(|frame| ui::draw(frame, app))?;
 
@@ -141,7 +141,7 @@ where
             continue;
         }
 
-        let action = (crate::screens::def(app.screen).handle_key)(app, key.code, key.modifiers);
+        let action = (screens::def(app.screen).handle_key)(app, key.code, key.modifiers);
 
         if let Some(Action::EditValueExternal) = action {
             edit_value_external(terminal, app).await?;
@@ -183,7 +183,6 @@ where
 }
 
 async fn run_editor<B: ratatui::backend::Backend + io::Write>(
-
     terminal: &mut Terminal<B>,
     app: &mut App,
     initial: &str,
@@ -227,14 +226,13 @@ where
 }
 
 async fn edit_value_external<B: ratatui::backend::Backend + io::Write>(
-
     terminal: &mut Terminal<B>,
     app: &mut App,
 ) -> anyhow::Result<()>
 where
     B::Error: Send + Sync + 'static,
 {
-    let initial = app.value_text.clone();
+    let initial = app.value.text.clone();
     let Some(edited) = run_editor(terminal, app, &initial, ".json").await? else {
         return Ok(());
     };
@@ -244,7 +242,7 @@ where
         return Ok(());
     }
 
-    app.value_edit_text = edited;
+    app.value.edit_text = edited;
     app.loading = true;
     terminal.draw(|frame| ui::draw(frame, app))?;
     app.perform(Action::SaveValue).await;
@@ -254,7 +252,6 @@ where
 }
 
 async fn edit_tree_value_external<B: ratatui::backend::Backend + io::Write>(
-
     terminal: &mut Terminal<B>,
     app: &mut App,
 ) -> anyhow::Result<()>
@@ -314,7 +311,6 @@ where
 }
 
 async fn create_entry_external<B: ratatui::backend::Backend + io::Write>(
-
     terminal: &mut Terminal<B>,
     app: &mut App,
 ) -> anyhow::Result<()>
@@ -346,9 +342,11 @@ where
         .cloned()
         .unwrap_or(serde_json::Value::Null);
 
-    app.entries_create_id.set(id);
-    app.entries_create_value.set(serde_json::to_string(&value)?);
-    app.entries_create_active = false;
+    app.entries.create_id.set_value(id);
+    app.entries
+        .create_value
+        .set_value(serde_json::to_string(&value)?);
+    app.entries.create_active = false;
 
     app.loading = true;
     terminal.draw(|frame| ui::draw(frame, app))?;
@@ -359,7 +357,6 @@ where
 }
 
 async fn create_ordered_entry_external<B: ratatui::backend::Backend + io::Write>(
-
     terminal: &mut Terminal<B>,
     app: &mut App,
 ) -> anyhow::Result<()>
@@ -391,8 +388,10 @@ where
         return Ok(());
     };
 
-    app.ordered_entries.create_id.set(id);
-    app.ordered_entries.create_value.set(value.to_string());
+    app.ordered_entries.create_id.set_value(id);
+    app.ordered_entries
+        .create_value
+        .set_value(value.to_string());
     app.ordered_entries.create_active = false;
 
     app.loading = true;
@@ -404,7 +403,6 @@ where
 }
 
 async fn create_memory_item_external<B: ratatui::backend::Backend + io::Write>(
-
     terminal: &mut Terminal<B>,
     app: &mut App,
 ) -> anyhow::Result<()>
@@ -437,9 +435,11 @@ where
         .unwrap_or(serde_json::Value::Null);
     let ttl = parsed.get("ttl").and_then(|v| v.as_u64()).unwrap_or(3600);
 
-    app.memory_entries.create_id.set(id);
-    app.memory_entries.create_value.set(serde_json::to_string(&value)?);
-    app.memory_entries.create_ttl.set(ttl.to_string());
+    app.memory_entries.create_id.set_value(id);
+    app.memory_entries
+        .create_value
+        .set_value(serde_json::to_string(&value)?);
+    app.memory_entries.create_ttl.set_value(ttl.to_string());
     app.memory_entries.create_active = false;
 
     app.loading = true;
@@ -451,7 +451,6 @@ where
 }
 
 async fn perform_with_terminal_suspended<B: ratatui::backend::Backend + io::Write>(
-
     terminal: &mut Terminal<B>,
     app: &mut App,
     action: Action,
@@ -472,4 +471,3 @@ where
 
     Ok(())
 }
-

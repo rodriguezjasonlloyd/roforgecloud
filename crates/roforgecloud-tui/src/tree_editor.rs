@@ -1,6 +1,6 @@
 use tui_textarea::TextArea;
 
-use crate::app::TextField;
+use crate::app::{TextField, TextFieldExt};
 use crate::json_tree::{flatten, JsonNode, JsonNodeValue};
 
 pub struct TreeEditor {
@@ -150,7 +150,7 @@ impl TreeEditor {
         };
         let text = textarea.lines().join("\n");
         let value = serde_json::from_str::<serde_json::Value>(&text)
-            .unwrap_or_else(|_| serde_json::Value::String(text));
+            .unwrap_or(serde_json::Value::String(text));
 
         if let Some(node) = self.root.get_mut(&current.path) {
             node.value = JsonNodeValue::Leaf(value);
@@ -171,7 +171,7 @@ impl TreeEditor {
         let clipboard = clipboard.as_mut()?;
         let text = clipboard.get_text().ok()?;
         let value = serde_json::from_str::<serde_json::Value>(&text)
-            .unwrap_or_else(|_| serde_json::Value::String(text));
+            .unwrap_or(serde_json::Value::String(text));
         self.replace_value(None, value);
         Some("pasted".to_string())
     }
@@ -290,7 +290,7 @@ impl TreeEditor {
         let Some(key) = &current.key else {
             return;
         };
-        self.edit_key.set(key.clone());
+        self.edit_key.set_value(key.clone());
         self.editing_key = true;
     }
 
@@ -301,7 +301,7 @@ impl TreeEditor {
         };
         let path = current.path.clone();
         if let Some(node) = self.root.get_mut(&path) {
-            node.key = Some(self.edit_key.value.clone());
+            node.key = Some(self.edit_key.get_value().to_string());
         }
         self.editing_key = false;
         self.edit_key.clear();

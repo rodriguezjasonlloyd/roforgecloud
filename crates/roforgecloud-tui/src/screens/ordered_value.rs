@@ -31,10 +31,7 @@ impl State {
         }
     }
 
-    pub(crate) fn reset(&mut self) {
-        self.editing = false;
-        self.increment_editing = false;
-    }
+
 }
 
 pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {

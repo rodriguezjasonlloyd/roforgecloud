@@ -3,7 +3,8 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::widgets::{Block, Borders};
 use ratatui::Frame;
 
-use crate::app::{Action, App, Screen, TextField};
+use crate::app::{Action, App, Screen, TextField, TextFieldExt};
+use crate::ui;
 use crate::update;
 
 pub(crate) struct State {
@@ -31,16 +32,16 @@ pub(crate) fn handle_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> O
             app.status.clear();
             None
         }
-        KeyCode::Backspace if app.memory_store_input.input.value.is_empty() => {
+        KeyCode::Backspace if app.memory_store_input.input.get_value().is_empty() => {
             app.screen = Screen::UniverseChoice;
             app.status.clear();
             None
         }
         KeyCode::Enter => {
-            if app.memory_store_input.input.value.is_empty() {
+            if app.memory_store_input.input.get_value().is_empty() {
                 return None;
             }
-            app.memory_store_input.id = app.memory_store_input.input.value.clone();
+            app.memory_store_input.id = app.memory_store_input.input.get_value().to_string();
             app.memory_entries.next_page_token = None;
             app.screen = Screen::MemoryStoreEntries;
             Some(Action::LoadMemoryItems)
@@ -68,5 +69,5 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
         .constraints([Constraint::Length(3), Constraint::Min(0)])
         .split(inner);
 
-    crate::ui::field_box(frame, rows[0], "Sorted Map Name", &app.memory_store_input.input, true);
+    ui::field_box(frame, rows[0], "Sorted Map Name", &app.memory_store_input.input, true);
 }

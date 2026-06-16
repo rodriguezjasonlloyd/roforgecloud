@@ -8,7 +8,7 @@ use ratatui::Frame;
 use ratatui_which_key::Keymap;
 use roforgecloud_core::opencloud::memory_store::SortedMapItem;
 
-use crate::app::{Action, App, MemoryCreateField, PendingConfirm, Screen, TextField, TreeTarget};
+use crate::app::{Action, App, MemoryCreateField, PendingConfirm, Screen, TextField, TextFieldExt, TreeTarget};
 use crate::update::{self, Act, Category, Scope, bind, dispatch, handle_pending_confirm, handle_text_field_key, list_nav_key, quit_key};
 use crate::ui::{HIGHLIGHT_STYLE, centered_rect_lines, centered_rect, field_box, field_paragraph_box, draw_tree};
 
@@ -42,7 +42,7 @@ impl State {
             search_active: false,
             create_id: TextField::default(),
             create_value: TextField::default(),
-            create_ttl: TextField { value: "3600".to_string(), cursor: 4 },
+            create_ttl: { let mut f = tui_textarea::TextArea::default(); f.set_value("3600"); f },
             create_field: MemoryCreateField::Id,
             create_active: false,
             create_choosing: false,
@@ -52,10 +52,10 @@ impl State {
     }
 
     pub(crate) fn visible_indices(&self) -> Vec<usize> {
-        if self.search.value.is_empty() {
+        if self.search.get_value().is_empty() {
             return (0..self.items.len()).collect();
         }
-        let needle = self.search.value.to_lowercase();
+        let needle = self.search.get_value().to_lowercase();
         self.items
             .iter()
             .enumerate()
@@ -132,7 +132,7 @@ pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
                 if app.memory_entries.visible_indices().is_empty() {
                     return None;
                 }
-                app.memory_entries.ttl_edit.set("3600");
+                app.memory_entries.ttl_edit.set_value("3600");
                 app.memory_entries.ttl_editing = true;
                 None
             },
@@ -159,7 +159,7 @@ pub(crate) fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) 
             KeyCode::Char('n') => {
                 app.memory_entries.create_id.clear();
                 app.memory_entries.create_value.clear();
-                app.memory_entries.create_ttl.set("3600");
+                app.memory_entries.create_ttl.set_value("3600");
                 app.memory_entries.create_field = MemoryCreateField::Id;
                 app.memory_entries.create_active = true;
                 None
@@ -215,7 +215,7 @@ pub(crate) fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) 
     }
 
     if matches!(code, KeyCode::Esc | KeyCode::Backspace | KeyCode::Char('h')) {
-        if !app.memory_entries.search.value.is_empty() {
+        if !app.memory_entries.search.get_value().is_empty() {
             app.memory_entries.search.clear();
             app.memory_entries.selected = 0;
             app.status.clear();
@@ -252,18 +252,18 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
         Some(name) => format!("{} (universe {} ({name}))", app.memory_store_input.id, app.universe_id),
         None => app.memory_store_input.id.clone(),
     };
-    let title = if app.memory_entries.search.value.is_empty() {
+    let title = if app.memory_entries.search.get_value().is_empty() {
         if app.memory_entries.marked.is_empty() {
             store_label
         } else {
             format!("{store_label} ({} selected)", app.memory_entries.marked.len())
         }
     } else if app.memory_entries.marked.is_empty() {
-        format!("{store_label} (search: {})", app.memory_entries.search.value)
+        format!("{store_label} (search: {})", app.memory_entries.search.get_value())
     } else {
         format!(
             "{store_label} (search: {}, {} selected)",
-            app.memory_entries.search.value,
+            app.memory_entries.search.get_value(),
             app.memory_entries.marked.len()
         )
     };

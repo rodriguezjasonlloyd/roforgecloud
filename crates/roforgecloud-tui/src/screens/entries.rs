@@ -9,7 +9,8 @@ use ratatui::Frame;
 use ratatui_which_key::Keymap;
 use roforgecloud_core::opencloud::datastore::DataStoreEntryInfo;
 
-use crate::app::{Action, App, EntriesCreateField, PendingConfirm, Screen, TextField, TreeTarget};
+use crate::app::{Action, App, EntriesCreateField, PendingConfirm, Screen, TextField, TextFieldExt, TreeTarget};
+use crate::user_lookup;
 use crate::update::{
     Act, Category, Scope, bind, dispatch, handle_pending_confirm, handle_text_field_key,
     handle_tree_key, list_nav_key, quit_key,
@@ -59,10 +60,10 @@ impl State {
     }
 
     pub(crate) fn visible_indices(&self) -> Vec<usize> {
-        if self.search.value.is_empty() {
+        if self.search.get_value().is_empty() {
             return (0..self.items.len()).collect();
         }
-        let needle = self.search.value.to_lowercase();
+        let needle = self.search.get_value().to_lowercase();
         self.items
             .iter()
             .enumerate()
@@ -70,7 +71,7 @@ impl State {
                 if entry.id.to_lowercase().contains(&needle) {
                     return true;
                 }
-                crate::userlookup::extract_id(&entry.id)
+                user_lookup::extract_id(&entry.id)
                     .and_then(|id| self.usernames.get(&id))
                     .is_some_and(|name| name.to_lowercase().contains(&needle))
             })
@@ -113,7 +114,7 @@ impl State {
         let ids: Vec<u64> = self
             .items
             .iter()
-            .filter_map(|entry| crate::userlookup::extract_id(&entry.id))
+            .filter_map(|entry| user_lookup::extract_id(&entry.id))
             .filter(|id| !self.usernames.contains_key(id))
             .collect();
         if ids.is_empty() {
@@ -122,7 +123,7 @@ impl State {
         let client = self.http.clone();
         let tx = self.username_tx.clone();
         tokio::spawn(async move {
-            if let Ok(resolved) = crate::userlookup::resolve_usernames(&client, &ids).await {
+            if let Ok(resolved) = user_lookup::resolve_usernames(&client, &ids).await {
                 let _ = tx.send(resolved);
             }
         });
@@ -224,7 +225,7 @@ pub(crate) fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) 
     }
 
     if matches!(code, KeyCode::Esc | KeyCode::Backspace | KeyCode::Char('h')) {
-        if !app.entries.search.value.is_empty() {
+        if !app.entries.search.get_value().is_empty() {
             app.entries.search.clear();
             app.entries.selected = 0;
             app.status.clear();
@@ -252,7 +253,7 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
             }
             spans.push(Span::raw(entry.id.clone()));
             if let Some(username) =
-                crate::userlookup::extract_id(&entry.id).and_then(|id| app.entries.usernames.get(&id))
+                user_lookup::extract_id(&entry.id).and_then(|id| app.entries.usernames.get(&id))
             {
                 spans.push(Span::styled(
                     format!("  ({username})"),
@@ -267,18 +268,18 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
         Some(name) => format!("{} (universe {} ({name}))", app.stores.data_store_id, app.universe_id),
         None => app.stores.data_store_id.clone(),
     };
-    let title = if app.entries.search.value.is_empty() {
+    let title = if app.entries.search.get_value().is_empty() {
         if app.entries.marked.is_empty() {
             store_label
         } else {
             format!("{store_label} ({} selected)", app.entries.marked.len())
         }
     } else if app.entries.marked.is_empty() {
-        format!("{store_label} (search: {})", app.entries.search.value)
+        format!("{store_label} (search: {})", app.entries.search.get_value())
     } else {
         format!(
             "{store_label} (search: {}, {} selected)",
-            app.entries.search.value,
+            app.entries.search.get_value(),
             app.entries.marked.len()
         )
     };

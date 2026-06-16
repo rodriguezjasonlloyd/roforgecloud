@@ -4,8 +4,10 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
 
-use crate::app::{App, Screen, TextField, TreeTarget};
+use crate::app::{App, Screen, TextFieldExt, TreeTarget};
 use crate::json_tree;
+use crate::screens;
+use crate::update;
 
 pub(crate) const HIGHLIGHT_STYLE: Style = Style::new().bg(Color::Rgb(60, 60, 60)).fg(Color::White);
 
@@ -17,7 +19,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         .constraints([Constraint::Min(1), Constraint::Length(3 + keybinds_height)])
         .split(area);
 
-    (crate::screens::def(app.screen).draw)(frame, app, chunks[0]);
+    (screens::def(app.screen).draw)(frame, app, chunks[0]);
 
     draw_info(frame, app, chunks[1], keybinds_height);
 
@@ -26,17 +28,12 @@ pub fn draw(frame: &mut Frame, app: &App) {
     }
 }
 
-fn scalar_style(preview: &str) -> Style {
-    if preview.starts_with('"') {
-        Style::default().fg(Color::Green)
-    } else if preview == "true" || preview == "false" {
-        Style::default().fg(Color::Magenta)
-    } else if preview == "null" {
-        Style::default().fg(Color::DarkGray)
-    } else if preview.parse::<f64>().is_ok() {
-        Style::default().fg(Color::Yellow)
-    } else {
-        Style::default()
+fn scalar_style(kind: &json_tree::ScalarKind) -> Style {
+    match kind {
+        json_tree::ScalarKind::String => Style::default().fg(Color::Green),
+        json_tree::ScalarKind::Bool => Style::default().fg(Color::Magenta),
+        json_tree::ScalarKind::Null => Style::default().fg(Color::DarkGray),
+        json_tree::ScalarKind::Number => Style::default().fg(Color::Yellow),
     }
 }
 
@@ -56,11 +53,7 @@ pub(crate) fn draw_tree(frame: &mut Frame, app: &App, area: Rect) {
             let mut spans = vec![Span::raw("  ".repeat(row.depth))];
 
             if row.is_container {
-                let marker = if row.preview.contains('…') {
-                    "▸ "
-                } else {
-                    "▾ "
-                };
+                let marker = if row.is_collapsed { "▸ " } else { "▾ " };
                 spans.push(Span::styled(marker, Style::default().fg(Color::DarkGray)));
             } else {
                 spans.push(Span::raw("  "));
@@ -69,11 +62,11 @@ pub(crate) fn draw_tree(frame: &mut Frame, app: &App, area: Rect) {
             if i == editor.cursor() && editor.editing_key() {
                 let field = editor.edit_key();
                 let prefix_width: usize = spans.iter().map(|s| s.content.chars().count()).sum();
-                let cursor_idx = field.value[..field.cursor].chars().count();
+                let cursor_idx = field.cursor().1;
                 edit_cursor_col = (prefix_width + 1 + cursor_idx) as u16;
                 let style = Style::new().bg(Color::Rgb(50, 50, 50)).fg(Color::Yellow);
                 spans.push(Span::raw("\""));
-                spans.push(Span::styled(field.value.clone(), style));
+                spans.push(Span::styled(field.get_value().to_string(), style));
                 spans.push(Span::raw("\": "));
             } else if let Some(key) = &row.key {
                 spans.push(Span::styled(
@@ -85,10 +78,8 @@ pub(crate) fn draw_tree(frame: &mut Frame, app: &App, area: Rect) {
             if i == editor.cursor() && editor.editing() {
                 edit_value_prefix_col = spans.iter().map(|s| s.content.chars().count()).sum::<usize>() as u16;
             } else {
-                spans.push(Span::styled(
-                    row.preview.clone(),
-                    scalar_style(&row.preview),
-                ));
+                let style = row.scalar_kind.as_ref().map(scalar_style).unwrap_or_default();
+                spans.push(Span::styled(row.preview.clone(), style));
             }
 
             ListItem::new(Line::from(spans))
@@ -170,7 +161,7 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(paragraph, area);
 }
 
-use crate::update::{join_hints, hint_bar_entries, InputHint, Scope, BACK_QUIT, MOVE, QUIT, SCROLL};
+use update::{join_hints, hint_bar_entries, InputHint, Scope, BACK_QUIT, MOVE, QUIT, SCROLL};
 
 fn screen_binds(app: &App) -> String {
     match app.screen {
@@ -197,7 +188,7 @@ fn screen_binds(app: &App) -> String {
             join_hints(&[MOVE, &hint_bar_entries(app, Scope::Tree)])
         }
         Screen::Entries if app.entries.create_choosing => InputHint::CreateChoosing.to_string(),
-        Screen::Entries if app.entries.create_active => crate::update::entries_create_hints(app),
+        Screen::Entries if app.entries.create_active => update::entries_create_hints(app),
         Screen::Entries => join_hints(&[MOVE, &hint_bar_entries(app, Scope::Entries), BACK_QUIT]),
         Screen::Value if app.tree_editor.as_ref().is_some_and(|t| t.is_editing()) => {
             InputHint::EditText.to_string()
@@ -244,7 +235,7 @@ fn screen_binds(app: &App) -> String {
             InputHint::CreateChoosing.to_string()
         }
         Screen::MemoryStoreEntries if app.memory_entries.create_active => {
-            crate::update::memory_create_hints(app)
+            update::memory_create_hints(app)
         }
         Screen::MemoryStoreEntries if app.memory_entries.ttl_editing => InputHint::TtlEdit.to_string(),
         Screen::MemoryStoreEntries => {
@@ -259,7 +250,7 @@ fn keybinds_text(app: &App) -> String {
     }
 
     if app.tree_editor.as_ref().is_some_and(|t| t.pending_leader()) {
-        return crate::update::InputHint::TreeLeaderMenu.to_string();
+        return update::InputHint::TreeLeaderMenu.to_string();
     }
 
     let binds = screen_binds(app);
@@ -299,14 +290,14 @@ fn draw_keybinds(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(paragraph, area);
 }
 
-pub(crate) fn field_box(frame: &mut Frame, area: Rect, title: &str, field: &TextField, active: bool) {
+pub(crate) fn field_box(frame: &mut Frame, area: Rect, title: &str, field: &tui_textarea::TextArea<'static>, active: bool) {
     let block = Block::default()
         .borders(Borders::ALL)
         .title(title.to_string());
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let (line, cursor_col) = field_line("", field, active, inner.width);
+    let (line, cursor_col) = field_line(field, inner.width);
     frame.render_widget(Paragraph::new(line), inner);
     if active {
         frame.set_cursor_position((inner.x + cursor_col, inner.y));
@@ -317,7 +308,7 @@ pub(crate) fn field_paragraph_box(
     frame: &mut Frame,
     area: Rect,
     title: &str,
-    field: &TextField,
+    field: &tui_textarea::TextArea<'static>,
     active: bool,
 ) {
     let block = Block::default()
@@ -326,19 +317,18 @@ pub(crate) fn field_paragraph_box(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let (lines, cursor) = field_paragraph("", field, active, inner.width, inner.height);
+    let (lines, cursor) = field_paragraph(field, inner.width, inner.height);
     frame.render_widget(Paragraph::new(lines), inner);
     if active {
         frame.set_cursor_position((inner.x + cursor.0, inner.y + cursor.1));
     }
 }
 
-fn field_line(label: &str, field: &TextField, _active: bool, width: u16) -> (Line<'static>, u16) {
-    let label_width = label.chars().count() as u16;
-    let field_width = width.saturating_sub(label_width).max(1) as usize;
-
-    let chars: Vec<char> = field.value.chars().collect();
-    let cursor_idx = field.value[..field.cursor].chars().count();
+fn field_line(field: &tui_textarea::TextArea<'static>, width: u16) -> (Line<'static>, u16) {
+    let field_width = width.max(1) as usize;
+    let value = field.get_value();
+    let chars: Vec<char> = value.chars().collect();
+    let cursor_idx = field.cursor().1;
 
     let start = if cursor_idx >= field_width {
         cursor_idx + 1 - field_width
@@ -352,25 +342,22 @@ fn field_line(label: &str, field: &TextField, _active: bool, width: u16) -> (Lin
     while text.chars().count() < field_width {
         text.push(' ');
     }
-    let line = Line::from(vec![Span::raw(label.to_string()), Span::raw(text)]);
-    let cursor_col = label_width + (cursor_idx - start) as u16;
-    (line, cursor_col)
+    let cursor_col = (cursor_idx - start) as u16;
+    (Line::from(Span::raw(text)), cursor_col)
 }
 
 fn field_paragraph(
-    label: &str,
-    field: &TextField,
-    _active: bool,
+    field: &tui_textarea::TextArea<'static>,
     width: u16,
     max_lines: u16,
 ) -> (Vec<Line<'static>>, (u16, u16)) {
-    let label_width = label.chars().count() as u16;
-    let cont_width = width.saturating_sub(label_width).max(1) as usize;
+    let cont_width = width.max(1) as usize;
     let max_lines = max_lines.max(1) as usize;
 
-    let chars: Vec<char> = field.value.chars().collect();
+    let value = field.get_value();
+    let chars: Vec<char> = value.chars().collect();
     let total = chars.len();
-    let cursor_idx = field.value[..field.cursor].chars().count();
+    let cursor_idx = field.cursor().1;
 
     let mut num_lines = if total == 0 {
         1
@@ -399,23 +386,14 @@ fn field_paragraph(
         let line_end = (line_start + cont_width).min(total);
         let line_chars: Vec<char> = chars[line_start..line_end].to_vec();
 
-        let prefix = if i == 0 {
-            Span::raw(label.to_string())
-        } else {
-            Span::raw(" ".repeat(label_width as usize))
-        };
-
         let mut text: String = line_chars.into_iter().collect();
         while text.chars().count() < cont_width {
             text.push(' ');
         }
-        lines.push(Line::from(vec![prefix, Span::raw(text)]));
+        lines.push(Line::from(Span::raw(text)));
     }
 
-    let cursor_pos = (
-        label_width + cursor_col as u16,
-        (cursor_line - start_line) as u16,
-    );
+    let cursor_pos = (cursor_col as u16, (cursor_line - start_line) as u16);
     (lines, cursor_pos)
 }
 

@@ -3,7 +3,8 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::widgets::{Block, Borders};
 use ratatui::Frame;
 
-use crate::app::{Action, App, OrderedInputField, Screen, TextField};
+use crate::app::{Action, App, OrderedInputField, Screen, TextField, TextFieldExt};
+use crate::ui;
 use crate::update;
 
 pub(crate) struct State {
@@ -15,7 +16,7 @@ pub(crate) struct State {
 impl State {
     pub(crate) fn new() -> Self {
         let mut scope = TextField::default();
-        scope.set("global");
+        scope.set_value("global");
         Self {
             store_id: TextField::default(),
             scope,
@@ -25,7 +26,7 @@ impl State {
 
     pub(crate) fn reset(&mut self) {
         self.store_id.clear();
-        self.scope.set("global");
+        self.scope.set_value("global");
         self.input_field = OrderedInputField::StoreId;
     }
 }
@@ -46,18 +47,18 @@ pub(crate) fn handle_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> O
         }
         KeyCode::Backspace
             if app.ordered_store_input.input_field == OrderedInputField::StoreId
-                && app.ordered_store_input.store_id.value.is_empty() =>
+                && app.ordered_store_input.store_id.get_value().is_empty() =>
         {
             app.screen = Screen::UniverseChoice;
             app.status.clear();
             None
         }
         KeyCode::Enter => {
-            if app.ordered_store_input.store_id.value.is_empty() {
+            if app.ordered_store_input.store_id.get_value().is_empty() {
                 return None;
             }
-            if app.ordered_store_input.scope.value.is_empty() {
-                app.ordered_store_input.scope.set("global");
+            if app.ordered_store_input.scope.get_value().is_empty() {
+                app.ordered_store_input.scope.set_value("global");
             }
             app.ordered_entries.next_page_token = None;
             app.screen = Screen::OrderedEntries;
@@ -93,6 +94,6 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
     let id_active = app.ordered_store_input.input_field == OrderedInputField::StoreId;
     let scope_active = app.ordered_store_input.input_field == OrderedInputField::Scope;
 
-    crate::ui::field_box(frame, rows[0], "Ordered Data Store ID", &app.ordered_store_input.store_id, id_active);
-    crate::ui::field_box(frame, rows[1], "Scope", &app.ordered_store_input.scope, scope_active);
+    ui::field_box(frame, rows[0], "Ordered Data Store ID", &app.ordered_store_input.store_id, id_active);
+    ui::field_box(frame, rows[1], "Scope", &app.ordered_store_input.scope, scope_active);
 }

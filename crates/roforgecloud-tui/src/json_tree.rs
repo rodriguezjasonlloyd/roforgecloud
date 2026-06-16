@@ -99,6 +99,14 @@ impl JsonNode {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScalarKind {
+    String,
+    Bool,
+    Null,
+    Number,
+}
+
 #[derive(Debug, Clone)]
 pub struct FlatRow {
     pub depth: usize,
@@ -106,8 +114,10 @@ pub struct FlatRow {
     pub key: Option<String>,
     pub preview: String,
     pub is_container: bool,
+    pub is_collapsed: bool,
     pub is_leaf: bool,
     pub is_closing: bool,
+    pub scalar_kind: Option<ScalarKind>,
 }
 
 pub fn flatten(root: &JsonNode) -> Vec<FlatRow> {
@@ -120,14 +130,22 @@ pub fn flatten(root: &JsonNode) -> Vec<FlatRow> {
 fn flatten_node(node: &JsonNode, depth: usize, path: &mut Vec<usize>, rows: &mut Vec<FlatRow>) {
     match &node.value {
         JsonNodeValue::Leaf(value) => {
+            let scalar_kind = Some(match value {
+                serde_json::Value::String(_) => ScalarKind::String,
+                serde_json::Value::Bool(_) => ScalarKind::Bool,
+                serde_json::Value::Null => ScalarKind::Null,
+                _ => ScalarKind::Number,
+            });
             rows.push(FlatRow {
                 depth,
                 path: path.clone(),
                 key: node.key.clone(),
                 preview: format_scalar(value),
                 is_container: false,
+                is_collapsed: false,
                 is_leaf: true,
                 is_closing: false,
+                scalar_kind,
             });
         }
         JsonNodeValue::Array(items) | JsonNodeValue::Object(items) => {
@@ -142,8 +160,10 @@ fn flatten_node(node: &JsonNode, depth: usize, path: &mut Vec<usize>, rows: &mut
                     key: node.key.clone(),
                     preview: format!("{open}…{close} ({} items)", items.len()),
                     is_container: true,
+                    is_collapsed: true,
                     is_leaf: false,
                     is_closing: false,
+                    scalar_kind: None,
                 });
             } else {
                 rows.push(FlatRow {
@@ -152,8 +172,10 @@ fn flatten_node(node: &JsonNode, depth: usize, path: &mut Vec<usize>, rows: &mut
                     key: node.key.clone(),
                     preview: open.to_string(),
                     is_container: true,
+                    is_collapsed: false,
                     is_leaf: false,
                     is_closing: false,
+                    scalar_kind: None,
                 });
                 for (i, child) in items.iter().enumerate() {
                     path.push(i);
@@ -166,8 +188,10 @@ fn flatten_node(node: &JsonNode, depth: usize, path: &mut Vec<usize>, rows: &mut
                     key: None,
                     preview: close.to_string(),
                     is_container: false,
+                    is_collapsed: false,
                     is_leaf: false,
                     is_closing: true,
+                    scalar_kind: None,
                 });
             }
         }

@@ -2,10 +2,12 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui_which_key::{Key, Keymap};
 pub(crate) use ratatui_which_key::WhichKeyState;
 
+use crate::screens;
+
 use crate::app::{
     Action, App, EntriesCreateField, MemoryCreateField, PendingConfirm, Screen, TextField,
-    TreeTarget, ValueSource, SERVICE_DATA_STORES, SERVICE_MEMORY_STORES, SERVICE_MESSAGING,
-    SERVICE_ORDERED_DATA_STORES,
+    TreeTarget, ValueSource, SERVICE_DATA_STORES, SERVICE_MEMORY_STORES,
+    SERVICE_MESSAGING, SERVICE_ORDERED_DATA_STORES,
 };
 
 /// Which-key scope: one variant per screen that has a key dispatch table.
@@ -233,7 +235,7 @@ pub(crate) fn hint_bar_entries(app: &App, scope: Scope) -> Vec<HintEntry> {
 pub(crate) fn build_keymap() -> Keymap<KeyEvent, Scope, Act, Category> {
     let mut keymap = Keymap::new();
 
-    for screen_def in &crate::screens::SCREENS {
+    for screen_def in &screens::SCREENS {
         if let Some(f) = screen_def.bind_keys {
             f(&mut keymap);
         }
@@ -522,36 +524,16 @@ pub(crate) fn handle_text_field_key(
     code: KeyCode,
     accept: impl Fn(char) -> bool,
 ) -> bool {
+    use crossterm::event::{KeyEventKind, KeyEventState};
     match code {
-        KeyCode::Char(c) if accept(c) => {
-            field.insert(c);
-            true
-        }
-        KeyCode::Backspace => {
-            field.backspace();
-            true
-        }
-        KeyCode::Delete => {
-            field.delete();
-            true
-        }
-        KeyCode::Left => {
-            field.left();
-            true
-        }
-        KeyCode::Right => {
-            field.right();
-            true
-        }
-        KeyCode::Home => {
-            field.home();
-            true
-        }
-        KeyCode::End => {
-            field.end();
-            true
-        }
-        _ => false,
+        KeyCode::Char(c) if !accept(c) => false,
+        KeyCode::Enter => false,
+        code => field.input(KeyEvent {
+            code,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }),
     }
 }
 
