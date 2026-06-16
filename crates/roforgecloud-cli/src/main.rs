@@ -12,6 +12,7 @@ use commands::datastore::DatastoreCommand;
 use commands::memory_store::MemoryStoreCommand;
 use commands::messaging::MessagingCommand;
 use commands::ordered_datastore::OrderedDatastoreCommand;
+use commands::scaffold::ScaffoldCommand;
 
 const STYLES: Styles = Styles::styled()
     .header(AnsiColor::Yellow.on_default().bold())
@@ -20,7 +21,7 @@ const STYLES: Styles = Styles::styled()
     .placeholder(AnsiColor::Cyan.on_default());
 
 #[derive(Parser)]
-#[command(name = "roforgecloud", about = "Roblox Open Cloud companion CLI", styles = STYLES)]
+#[command(name = "roforgecloud", about = "Roblox developer toolkit", styles = STYLES)]
 struct Cli {
     #[command(flatten)]
     oauth: auth::OAuthArgs,
@@ -39,6 +40,8 @@ enum Command {
     MemoryStore(MemoryStoreCommand),
     #[command(subcommand)]
     Messaging(MessagingCommand),
+    #[command(subcommand)]
+    Scaffold(ScaffoldCommand),
     Login,
     Logout,
 }
@@ -67,6 +70,7 @@ async fn run() -> anyhow::Result<()> {
             println!("{}", "logged out".green());
             return Ok(());
         }
+        Command::Scaffold(cmd) => return commands::scaffold::run(cmd).await,
         _ => {}
     }
 
@@ -81,6 +85,6 @@ async fn run() -> anyhow::Result<()> {
         Command::OrderedDatastore(cmd) => commands::ordered_datastore::run(&client, cmd).await,
         Command::MemoryStore(cmd) => commands::memory_store::run(&client, cmd).await,
         Command::Messaging(cmd) => commands::messaging::run(&client, cmd).await,
-        Command::Login | Command::Logout => unreachable!(),
+        Command::Login | Command::Logout | Command::Scaffold(_) => unreachable!(),
     }
 }

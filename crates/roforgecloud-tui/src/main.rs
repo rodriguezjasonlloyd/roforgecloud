@@ -1,9 +1,9 @@
 mod api;
 mod app;
-mod status;
 mod json_highlight;
 mod json_tree;
 mod screens;
+mod status;
 mod tree_editor;
 mod ui;
 mod update;
@@ -27,10 +27,7 @@ use roforgecloud_core::oauth::{self, OAuthClient};
 use roforgecloud_core::opencloud::{Credentials, OpenCloudClient};
 
 #[derive(Parser)]
-#[command(
-    name = "roforgecloud-tui",
-    about = "Browse Roblox Open Cloud data stores"
-)]
+#[command(name = "roforgecloud-tui", about = "Roblox developer toolkit")]
 struct Cli {
     #[command(flatten)]
     oauth: auth::OAuthArgs,
@@ -127,7 +124,6 @@ where
         if key.kind != KeyEventKind::Press {
             continue;
         }
-
 
         let action = (screens::def(app.screen).handle_key)(app, key.code, key.modifiers);
 
