@@ -2,6 +2,7 @@ use roforgecloud_core::oauth::OAuthClient;
 use roforgecloud_core::opencloud::OpenCloudClient;
 
 use crate::screens;
+use crate::status;
 use crate::tree_editor::TreeEditor;
 use crate::update;
 
@@ -472,7 +473,7 @@ impl App {
                 self.status.clear();
             }
             Err(err) => {
-                self.status = format!("invalid JSON: {err}");
+                self.status = status::json_error(err);
             }
         }
     }

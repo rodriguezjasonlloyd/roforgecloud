@@ -2,6 +2,7 @@ use roforgecloud_core::auth;
 use roforgecloud_core::oauth;
 
 use crate::app::{App, Screen};
+use crate::status;
 
 impl App {
     pub async fn login(&mut self) {
@@ -18,7 +19,7 @@ impl App {
                 self.logged_in = true;
                 self.status = "logged in".to_string();
             }
-            Err(err) => self.status = format!("error: {err}"),
+            Err(err) => self.status = status::api_error(err),
         }
     }
 
@@ -35,7 +36,7 @@ impl App {
                 self.logged_in = false;
                 self.status = "logged out".to_string();
             }
-            Err(err) => self.status = format!("error: {err}"),
+            Err(err) => self.status = status::api_error(err),
         }
     }
 
@@ -67,7 +68,7 @@ impl App {
                 self.resolve_universe_names();
             }
             Err(err) => {
-                self.status = format!("error: {err}");
+                self.status = status::api_error(err);
             }
         }
     }

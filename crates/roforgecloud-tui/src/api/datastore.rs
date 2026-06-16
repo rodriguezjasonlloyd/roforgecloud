@@ -1,6 +1,7 @@
 use roforgecloud_core::opencloud::ListQuery;
 
 use crate::app::{App, TextFieldExt, Screen, TreeTarget, ValueSource};
+use crate::status;
 use crate::tree_editor::TreeEditor;
 
 impl App {
@@ -12,7 +13,7 @@ impl App {
              Set ROFORGE_API_KEY and restart."
                 .to_string()
         } else {
-            format!("error: {err}")
+            status::api_error(err)
         }
     }
 
@@ -93,7 +94,7 @@ impl App {
 
         for (n, &i) in indices.iter().enumerate() {
             let id = self.stores.items[i].id.clone();
-            self.status = format!("scheduling deletion {}/{total}...", n + 1);
+            self.status = status::bulk_progress(n + 1, total, "scheduling deletion");
             match self.client.delete_data_store(self.universe_id, &id).await {
                 Ok(info) => self.stores.items[i] = info,
                 Err(_) => errors += 1,
@@ -101,14 +102,7 @@ impl App {
         }
 
         self.stores.marked.clear();
-        self.status = if errors == 0 {
-            format!("scheduled {total} data stores for deletion")
-        } else {
-            format!(
-                "scheduled {} data stores for deletion, {errors} failed",
-                total - errors
-            )
-        };
+        self.status = status::bulk_result(total - errors, errors, "data stores", "scheduled for deletion");
     }
 
     pub async fn bulk_undelete_data_stores(&mut self) {
@@ -120,7 +114,7 @@ impl App {
 
         for (n, &i) in indices.iter().enumerate() {
             let id = self.stores.items[i].id.clone();
-            self.status = format!("restoring {}/{total}...", n + 1);
+            self.status = status::bulk_progress(n + 1, total, "restoring");
             match self.client.undelete_data_store(self.universe_id, &id).await {
                 Ok(info) => self.stores.items[i] = info,
                 Err(_) => errors += 1,
@@ -128,11 +122,7 @@ impl App {
         }
 
         self.stores.marked.clear();
-        self.status = if errors == 0 {
-            format!("restored {total} data stores")
-        } else {
-            format!("restored {} data stores, {errors} failed", total - errors)
-        };
+        self.status = status::bulk_result(total - errors, errors, "data stores", "restored");
     }
 
     pub async fn load_entries(&mut self) {
@@ -159,7 +149,7 @@ impl App {
     pub async fn load_entries_page(&mut self) {
         let page_token = self.entries.page_tokens.last().cloned().flatten();
 
-        self.status = "loading entries...".to_string();
+        self.status = status::LOADING.to_string();
         match self
             .client
             .list_entries(
@@ -180,7 +170,7 @@ impl App {
                 self.entries.marked.clear();
                 self.entries.next_page_token = result.next_page_token;
                 let page = self.entries.page_tokens.len();
-                self.status = format!("{} entries (page {page})", self.entries.items.len());
+                self.status = status::page_count(self.entries.items.len(), "entries", page);
                 self.resolve_entry_usernames();
             }
             Err(err) => {
@@ -226,7 +216,7 @@ impl App {
         self.entries.marked.clear();
         self.entries.next_page_token = None;
         self.entries.page_tokens = vec![None];
-        self.status = format!("{} entries (search across whole store)", self.entries.items.len());
+        self.status = status::search_count(self.entries.items.len(), "entries");
         self.resolve_entry_usernames();
     }
 
@@ -239,7 +229,7 @@ impl App {
             return;
         };
 
-        self.status = "loading value...".to_string();
+        self.status = status::LOADING.to_string();
         match self
             .client
             .get_entry_with_revision(self.universe_id, &self.stores.data_store_id, &key, Some(&scope))
@@ -309,12 +299,12 @@ impl App {
         let value: serde_json::Value = match serde_json::from_str(&self.value.edit_text) {
             Ok(value) => value,
             Err(err) => {
-                self.status = format!("invalid JSON: {err}");
+                self.status = status::json_error(err);
                 return;
             }
         };
 
-        self.status = "saving...".to_string();
+        self.status = status::SAVING.to_string();
         match self
             .client
             .set_entry(
@@ -331,12 +321,12 @@ impl App {
                 self.value.text = serde_json::to_string_pretty(&value).unwrap_or_default();
                 self.value.revision = revision;
                 self.value.scroll = 0;
-                self.status = "saved".to_string();
+                self.status = status::SAVED.to_string();
             }
             Err(err) if matches!(&err, roforgecloud_core::error::Error::Api { status, .. } if status.as_u16() == 409 || status.as_u16() == 412) =>
             {
                 self.load_value().await;
-                self.status = "conflict: entry changed on server — reloaded latest value, your edit was discarded".to_string();
+                self.status = status::CONFLICT.to_string();
             }
             Err(err) => {
                 self.status = self.datastore_error(err);
@@ -355,16 +345,15 @@ impl App {
             None => ("global".to_string(), id.to_string()),
         };
 
-        let value: serde_json::Value = match serde_json::from_str(self.entries.create_value.get_value())
-        {
+        let value: serde_json::Value = match serde_json::from_str(self.entries.create_value.get_value()) {
             Ok(value) => value,
             Err(err) => {
-                self.status = format!("invalid JSON: {err}");
+                self.status = status::json_error(err);
                 return;
             }
         };
 
-        self.status = "creating...".to_string();
+        self.status = status::CREATING.to_string();
         match self
             .client
             .create_entry(
@@ -380,7 +369,7 @@ impl App {
                 self.entries.create_id.clear();
                 self.entries.create_value.clear();
                 self.entries.create_active = false;
-                self.status = "created".to_string();
+                self.status = status::CREATED.to_string();
                 self.load_entries_page().await;
             }
             Err(err) => {
@@ -397,7 +386,7 @@ impl App {
             return;
         };
 
-        self.status = "deleting...".to_string();
+        self.status = status::DELETING.to_string();
         match self
             .client
             .delete_entry(self.universe_id, &self.stores.data_store_id, &key, Some(&scope))
@@ -413,7 +402,7 @@ impl App {
                     self.exit_tree_mode();
                     self.screen = Screen::Entries;
                 }
-                self.status = "deleted".to_string();
+                self.status = status::DELETED.to_string();
             }
             Err(err) => {
                 self.status = self.datastore_error(err);
@@ -438,7 +427,7 @@ impl App {
             .collect();
 
         if targets.is_empty() {
-            self.status = "no entries to delete".to_string();
+            self.status = status::NO_ENTRIES_TO_DELETE.to_string();
             return;
         }
 
@@ -447,7 +436,7 @@ impl App {
         let mut errors = 0;
 
         for (i, scope, key) in &targets {
-            self.status = format!("deleting {}/{total}...", deleted_indices.len() + errors + 1);
+            self.status = status::bulk_progress(deleted_indices.len() + errors + 1, total, "deleting");
             match self
                 .client
                 .delete_entry(self.universe_id, &self.stores.data_store_id, key, Some(scope))
@@ -469,10 +458,6 @@ impl App {
             self.entries.selected = visible.saturating_sub(1);
         }
 
-        self.status = if errors == 0 {
-            format!("deleted {} entries", deleted_indices.len())
-        } else {
-            format!("deleted {} entries, {errors} failed", deleted_indices.len())
-        };
+        self.status = status::bulk_result(deleted_indices.len(), errors, "entries", "deleted");
     }
 }

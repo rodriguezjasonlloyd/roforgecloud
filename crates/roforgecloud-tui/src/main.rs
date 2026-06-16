@@ -1,5 +1,6 @@
 mod api;
 mod app;
+mod status;
 mod json_highlight;
 mod json_tree;
 mod screens;
