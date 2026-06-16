@@ -300,13 +300,9 @@ pub struct App {
 
     pub which_key: crate::update::Keys,
 
-    pub messaging_topic: TextField,
-    pub messaging_message: TextField,
-    pub messaging_field: MessagingField,
+    pub messaging: crate::screens::messaging::State,
 
-    pub ordered_data_store_id: TextField,
-    pub ordered_scope: TextField,
-    pub ordered_input_field: OrderedInputField,
+    pub ordered_store_input: crate::screens::ordered_store_input::State,
 
     pub ordered_entries: Vec<OrderedDataStoreEntry>,
     pub ordered_entries_selected: usize,
@@ -331,8 +327,7 @@ pub struct App {
 
     pub value_source: ValueSource,
 
-    pub memory_sorted_map_id: String,
-    pub memory_sorted_map_input: TextField,
+    pub memory_store_input: crate::screens::memory_store_input::State,
 
     pub memory_items: Vec<SortedMapItem>,
     pub memory_items_selected: usize,
@@ -420,15 +415,8 @@ impl App {
             tree_editor: None,
             tree_target: TreeTarget::Value,
             clipboard: arboard::Clipboard::new().ok(),
-            messaging_topic: TextField::default(),
-            messaging_message: TextField::default(),
-            messaging_field: MessagingField::Topic,
-            ordered_data_store_id: TextField::default(),
-            ordered_scope: TextField {
-                value: "global".to_string(),
-                cursor: "global".len(),
-            },
-            ordered_input_field: OrderedInputField::StoreId,
+            messaging: crate::screens::messaging::State::new(),
+            ordered_store_input: crate::screens::ordered_store_input::State::new(),
             ordered_entries: Vec::new(),
             ordered_entries_selected: 0,
             ordered_entries_next_page_token: None,
@@ -448,8 +436,7 @@ impl App {
             ordered_create_active: false,
             ordered_create_choosing: false,
             value_source: ValueSource::DataStore,
-            memory_sorted_map_id: String::new(),
-            memory_sorted_map_input: TextField::default(),
+            memory_store_input: crate::screens::memory_store_input::State::new(),
             memory_items: Vec::new(),
             memory_items_selected: 0,
             memory_items_next_page_token: None,
@@ -1196,7 +1183,7 @@ impl App {
             .client
             .update_sorted_map_item(
                 self.universe_id,
-                &self.memory_sorted_map_id,
+                &self.memory_store_input.id,
                 &self.memory_item_editing_id,
                 &value,
                 self.memory_item_ttl_seconds,
@@ -1387,8 +1374,8 @@ impl App {
             .client
             .list_ordered_entries(
                 self.universe_id,
-                &self.ordered_data_store_id.value,
-                &self.ordered_scope.value,
+                &self.ordered_store_input.store_id.value,
+                &self.ordered_store_input.scope.value,
                 &ListQuery {
                     page_token: page_token.as_deref(),
                     max_page_size: Some(256),
@@ -1420,8 +1407,8 @@ impl App {
                 .client
                 .list_ordered_entries(
                     self.universe_id,
-                    &self.ordered_data_store_id.value,
-                    &self.ordered_scope.value,
+                    &self.ordered_store_input.store_id.value,
+                    &self.ordered_store_input.scope.value,
                     &ListQuery {
                         page_token: page_token.as_deref(),
                         max_page_size: Some(256),
@@ -1507,8 +1494,8 @@ impl App {
             .client
             .get_ordered_entry(
                 self.universe_id,
-                &self.ordered_data_store_id.value,
-                &self.ordered_scope.value,
+                &self.ordered_store_input.store_id.value,
+                &self.ordered_store_input.scope.value,
                 &id,
             )
             .await
@@ -1516,7 +1503,7 @@ impl App {
             Ok(entry) => {
                 self.ordered_value_title = format!(
                     "{}/{id} (scope: {})",
-                    self.ordered_data_store_id.value, self.ordered_scope.value
+                    self.ordered_store_input.store_id.value, self.ordered_store_input.scope.value
                 );
                 self.ordered_value = entry.value;
                 self.ordered_value_editing = false;
@@ -1548,8 +1535,8 @@ impl App {
             .client
             .update_ordered_entry(
                 self.universe_id,
-                &self.ordered_data_store_id.value,
-                &self.ordered_scope.value,
+                &self.ordered_store_input.store_id.value,
+                &self.ordered_store_input.scope.value,
                 &id,
                 value,
             )
@@ -1586,8 +1573,8 @@ impl App {
             .client
             .increment_ordered_entry(
                 self.universe_id,
-                &self.ordered_data_store_id.value,
-                &self.ordered_scope.value,
+                &self.ordered_store_input.store_id.value,
+                &self.ordered_store_input.scope.value,
                 &id,
                 amount,
             )
@@ -1616,8 +1603,8 @@ impl App {
             .client
             .delete_ordered_entry(
                 self.universe_id,
-                &self.ordered_data_store_id.value,
-                &self.ordered_scope.value,
+                &self.ordered_store_input.store_id.value,
+                &self.ordered_store_input.scope.value,
                 &id,
             )
             .await
@@ -1659,8 +1646,8 @@ impl App {
                 .client
                 .delete_ordered_entry(
                     self.universe_id,
-                    &self.ordered_data_store_id.value,
-                    &self.ordered_scope.value,
+                    &self.ordered_store_input.store_id.value,
+                    &self.ordered_store_input.scope.value,
                     &id,
                 )
                 .await
@@ -1707,8 +1694,8 @@ impl App {
             .client
             .create_ordered_entry(
                 self.universe_id,
-                &self.ordered_data_store_id.value,
-                &self.ordered_scope.value,
+                &self.ordered_store_input.store_id.value,
+                &self.ordered_store_input.scope.value,
                 id,
                 value,
             )
@@ -1728,7 +1715,7 @@ impl App {
     }
 
     pub async fn publish_message(&mut self) {
-        if self.messaging_topic.value.is_empty() {
+        if self.messaging.topic.value.is_empty() {
             self.status = "topic cannot be empty".to_string();
             return;
         }
@@ -1738,13 +1725,13 @@ impl App {
             .client
             .publish_message(
                 self.universe_id,
-                &self.messaging_topic.value,
-                &self.messaging_message.value,
+                &self.messaging.topic.value,
+                &self.messaging.message.value,
             )
             .await
         {
             Ok(()) => {
-                self.status = format!("published to '{}'", self.messaging_topic.value);
+                self.status = format!("published to '{}'", self.messaging.topic.value);
             }
             Err(err) => {
                 self.status = format!("error: {err}");
@@ -1781,7 +1768,7 @@ impl App {
             .client
             .list_sorted_map_items(
                 self.universe_id,
-                &self.memory_sorted_map_id,
+                &self.memory_store_input.id,
                 &ListQuery {
                     page_token: page_token.as_deref(),
                     max_page_size: Some(256),
@@ -1814,7 +1801,7 @@ impl App {
                 .client
                 .list_sorted_map_items(
                     self.universe_id,
-                    &self.memory_sorted_map_id,
+                    &self.memory_store_input.id,
                     &ListQuery {
                         page_token: page_token.as_deref(),
                         max_page_size: Some(256),
@@ -1895,13 +1882,13 @@ impl App {
         self.status = "loading value...".to_string();
         match self
             .client
-            .get_sorted_map_item(self.universe_id, &self.memory_sorted_map_id, &id)
+            .get_sorted_map_item(self.universe_id, &self.memory_store_input.id, &id)
             .await
         {
             Ok(item) => {
                 let expire = item.expire_time.clone().unwrap_or_else(|| "—".to_string());
                 self.value_title =
-                    format!("{}/{id} (expires: {expire})", self.memory_sorted_map_id);
+                    format!("{}/{id} (expires: {expire})", self.memory_store_input.id);
                 self.value_text = serde_json::to_string_pretty(&item.value).unwrap_or_default();
                 self.value_revision = item.etag;
                 self.value_scroll = 0;
@@ -1944,7 +1931,7 @@ impl App {
             .client
             .create_sorted_map_item(
                 self.universe_id,
-                &self.memory_sorted_map_id,
+                &self.memory_store_input.id,
                 id,
                 &value,
                 ttl,
@@ -1974,7 +1961,7 @@ impl App {
         self.status = "deleting...".to_string();
         match self
             .client
-            .delete_sorted_map_item(self.universe_id, &self.memory_sorted_map_id, &id)
+            .delete_sorted_map_item(self.universe_id, &self.memory_store_input.id, &id)
             .await
         {
             Ok(()) => {
@@ -2012,7 +1999,7 @@ impl App {
             self.status = format!("deleting {}/{total}...", deleted_indices.len() + errors + 1);
             match self
                 .client
-                .delete_sorted_map_item(self.universe_id, &self.memory_sorted_map_id, &id)
+                .delete_sorted_map_item(self.universe_id, &self.memory_store_input.id, &id)
                 .await
             {
                 Ok(()) => deleted_indices.push(i),
@@ -2057,7 +2044,7 @@ impl App {
             .client
             .update_sorted_map_item(
                 self.universe_id,
-                &self.memory_sorted_map_id,
+                &self.memory_store_input.id,
                 &item.id,
                 &item.value,
                 ttl,

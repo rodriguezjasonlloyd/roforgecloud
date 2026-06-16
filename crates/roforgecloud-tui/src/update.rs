@@ -1068,24 +1068,20 @@ pub(crate) fn enter_service(app: &mut App) -> Option<Action> {
             Some(Action::LoadStores)
         }
         SERVICE_MESSAGING => {
-            app.messaging_topic.clear();
-            app.messaging_message.clear();
-            app.messaging_field = MessagingField::Topic;
+            app.messaging.reset();
             app.status.clear();
             app.screen = Screen::Messaging;
             app.resolve_current_universe_name();
             None
         }
         SERVICE_ORDERED_DATA_STORES => {
-            app.ordered_data_store_id.clear();
-            app.ordered_scope.set("global");
-            app.ordered_input_field = OrderedInputField::StoreId;
+            app.ordered_store_input.reset();
             app.status.clear();
             app.screen = Screen::OrderedStoreInput;
             None
         }
         SERVICE_MEMORY_STORES => {
-            app.memory_sorted_map_input.clear();
+            app.memory_store_input.reset();
             app.status.clear();
             app.screen = Screen::MemoryStoreInput;
             None
@@ -1268,30 +1264,8 @@ pub(crate) fn handle_universe_input_key(app: &mut App, code: KeyCode, mods: KeyM
     crate::screens::universe_input::handle_key(app, code, mods)
 }
 
-pub(crate) fn handle_messaging_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> Option<Action> {
-    match code {
-        KeyCode::Tab | KeyCode::BackTab => {
-            app.messaging_field = match app.messaging_field {
-                MessagingField::Topic => MessagingField::Message,
-                MessagingField::Message => MessagingField::Topic,
-            };
-            None
-        }
-        KeyCode::Enter => Some(Action::PublishMessage),
-        KeyCode::Esc => {
-            app.screen = Screen::UniverseChoice;
-            app.status.clear();
-            None
-        }
-        _ => {
-            let field = match app.messaging_field {
-                MessagingField::Topic => &mut app.messaging_topic,
-                MessagingField::Message => &mut app.messaging_message,
-            };
-            handle_text_field_key(field, code, |_| true);
-            None
-        }
-    }
+pub(crate) fn handle_messaging_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> Option<Action> {
+    crate::screens::messaging::handle_key(app, code, mods)
 }
 
 struct KeyAction {
@@ -1521,48 +1495,8 @@ pub(crate) fn handle_value_key(app: &mut App, code: KeyCode, modifiers: KeyModif
     dispatch(app, Scope::Value, code, modifiers)
 }
 
-pub(crate) fn handle_ordered_store_input_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> Option<Action> {
-    match code {
-        KeyCode::Tab | KeyCode::BackTab => {
-            app.ordered_input_field = match app.ordered_input_field {
-                OrderedInputField::StoreId => OrderedInputField::Scope,
-                OrderedInputField::Scope => OrderedInputField::StoreId,
-            };
-            None
-        }
-        KeyCode::Esc => {
-            app.screen = Screen::UniverseChoice;
-            app.status.clear();
-            None
-        }
-        KeyCode::Backspace
-            if app.ordered_input_field == OrderedInputField::StoreId
-                && app.ordered_data_store_id.value.is_empty() =>
-        {
-            app.screen = Screen::UniverseChoice;
-            app.status.clear();
-            None
-        }
-        KeyCode::Enter => {
-            if app.ordered_data_store_id.value.is_empty() {
-                return None;
-            }
-            if app.ordered_scope.value.is_empty() {
-                app.ordered_scope.set("global");
-            }
-            app.ordered_entries_next_page_token = None;
-            app.screen = Screen::OrderedEntries;
-            Some(Action::LoadOrderedEntries)
-        }
-        _ => {
-            let field = match app.ordered_input_field {
-                OrderedInputField::StoreId => &mut app.ordered_data_store_id,
-                OrderedInputField::Scope => &mut app.ordered_scope,
-            };
-            handle_text_field_key(field, code, |_| true);
-            None
-        }
-    }
+pub(crate) fn handle_ordered_store_input_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> Option<Action> {
+    crate::screens::ordered_store_input::handle_key(app, code, mods)
 }
 
 fn is_numeric_input_char(c: char) -> bool {
@@ -1773,32 +1707,8 @@ fn handle_tree_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Opt
     dispatch(app, Scope::Tree, code, modifiers)
 }
 
-pub(crate) fn handle_memory_store_input_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> Option<Action> {
-    match code {
-        KeyCode::Esc => {
-            app.screen = Screen::UniverseChoice;
-            app.status.clear();
-            None
-        }
-        KeyCode::Backspace if app.memory_sorted_map_input.value.is_empty() => {
-            app.screen = Screen::UniverseChoice;
-            app.status.clear();
-            None
-        }
-        KeyCode::Enter => {
-            if app.memory_sorted_map_input.value.is_empty() {
-                return None;
-            }
-            app.memory_sorted_map_id = app.memory_sorted_map_input.value.clone();
-            app.memory_items_next_page_token = None;
-            app.screen = Screen::MemoryStoreEntries;
-            Some(Action::LoadMemoryItems)
-        }
-        _ => {
-            handle_text_field_key(&mut app.memory_sorted_map_input, code, |_| true);
-            None
-        }
-    }
+pub(crate) fn handle_memory_store_input_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> Option<Action> {
+    crate::screens::memory_store_input::handle_key(app, code, mods)
 }
 
 const MEMORY_CREATE_KEYS: &[KeyAction] = &[

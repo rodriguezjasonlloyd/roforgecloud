@@ -1,4 +1,7 @@
+pub(crate) mod memory_store_input;
 pub(crate) mod menu;
+pub(crate) mod messaging;
+pub(crate) mod ordered_store_input;
 pub(crate) mod universe_choice;
 pub(crate) mod universe_input;
 pub(crate) mod universe_select;
@@ -75,15 +78,15 @@ pub(crate) const SCREENS: [ScreenDef; 13] = [
     // Screen::Messaging (7)
     ScreenDef {
         scope: None,
-        handle_key: crate::update::handle_messaging_key,
-        draw: crate::ui::draw_messaging,
+        handle_key: messaging::handle_key,
+        draw: messaging::draw,
         bind_keys: None,
     },
     // Screen::OrderedStoreInput (8)
     ScreenDef {
         scope: None,
-        handle_key: crate::update::handle_ordered_store_input_key,
-        draw: crate::ui::draw_ordered_store_input,
+        handle_key: ordered_store_input::handle_key,
+        draw: ordered_store_input::draw,
         bind_keys: None,
     },
     // Screen::OrderedEntries (9)
@@ -103,8 +106,8 @@ pub(crate) const SCREENS: [ScreenDef; 13] = [
     // Screen::MemoryStoreInput (11)
     ScreenDef {
         scope: None,
-        handle_key: crate::update::handle_memory_store_input_key,
-        draw: crate::ui::draw_memory_store_input,
+        handle_key: memory_store_input::handle_key,
+        draw: memory_store_input::draw,
         bind_keys: None,
     },
     // Screen::MemoryStoreEntries (12)

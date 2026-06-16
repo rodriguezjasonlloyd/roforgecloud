@@ -47,65 +47,11 @@ pub(crate) fn draw_universe_select(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 pub(crate) fn draw_messaging(frame: &mut Frame, app: &App, area: Rect) {
-    let universe = match app.universe_names.get(&app.universe_id) {
-        Some(name) => format!("{} ({name})", app.universe_id),
-        None => app.universe_id.to_string(),
-    };
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(format!("Messaging: Publish (universe {universe})"));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(3)])
-        .split(inner);
-
-    let topic_active = app.messaging_field == MessagingField::Topic;
-    let message_active = app.messaging_field == MessagingField::Message;
-
-    field_box(frame, rows[0], "Topic", &app.messaging_topic, topic_active);
-    field_paragraph_box(
-        frame,
-        rows[1],
-        "Message",
-        &app.messaging_message,
-        message_active,
-    );
+    crate::screens::messaging::draw(frame, app, area);
 }
 
 pub(crate) fn draw_ordered_store_input(frame: &mut Frame, app: &App, area: Rect) {
-    let universe = match app.universe_names.get(&app.universe_id) {
-        Some(name) => format!("{} ({name})", app.universe_id),
-        None => app.universe_id.to_string(),
-    };
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(format!("Ordered Data Stores (universe {universe})"));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Length(3),
-            Constraint::Min(0),
-        ])
-        .split(inner);
-
-    let id_active = app.ordered_input_field == OrderedInputField::StoreId;
-    let scope_active = app.ordered_input_field == OrderedInputField::Scope;
-
-    field_box(
-        frame,
-        rows[0],
-        "Ordered Data Store ID",
-        &app.ordered_data_store_id,
-        id_active,
-    );
-    field_box(frame, rows[1], "Scope", &app.ordered_scope, scope_active);
+    crate::screens::ordered_store_input::draw(frame, app, area);
 }
 
 pub(crate) fn draw_ordered_entries(frame: &mut Frame, app: &App, area: Rect) {
@@ -132,11 +78,11 @@ pub(crate) fn draw_ordered_entries(frame: &mut Frame, app: &App, area: Rect) {
     let store_label = match app.universe_names.get(&app.universe_id) {
         Some(name) => format!(
             "{} (scope: {}, universe {} ({name}))",
-            app.ordered_data_store_id.value, app.ordered_scope.value, app.universe_id
+            app.ordered_store_input.store_id.value, app.ordered_store_input.scope.value, app.universe_id
         ),
         None => format!(
             "{} (scope: {})",
-            app.ordered_data_store_id.value, app.ordered_scope.value
+            app.ordered_store_input.store_id.value, app.ordered_store_input.scope.value
         ),
     };
     let title = if app.ordered_entries_search.value.is_empty() {
@@ -244,28 +190,7 @@ pub(crate) fn draw_ordered_value(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 pub(crate) fn draw_memory_store_input(frame: &mut Frame, app: &App, area: Rect) {
-    let universe = match app.universe_names.get(&app.universe_id) {
-        Some(name) => format!("{} ({name})", app.universe_id),
-        None => app.universe_id.to_string(),
-    };
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(format!("Memory Stores (universe {universe})"));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(0)])
-        .split(inner);
-
-    field_box(
-        frame,
-        rows[0],
-        "Sorted Map",
-        &app.memory_sorted_map_input,
-        true,
-    );
+    crate::screens::memory_store_input::draw(frame, app, area);
 }
 
 pub(crate) fn draw_memory_entries(frame: &mut Frame, app: &App, area: Rect) {
@@ -297,9 +222,9 @@ pub(crate) fn draw_memory_entries(frame: &mut Frame, app: &App, area: Rect) {
     let store_label = match app.universe_names.get(&app.universe_id) {
         Some(name) => format!(
             "{} (universe {} ({name}))",
-            app.memory_sorted_map_id, app.universe_id
+            app.memory_store_input.id, app.universe_id
         ),
-        None => app.memory_sorted_map_id.clone(),
+        None => app.memory_store_input.id.clone(),
     };
     let title = if app.memory_items_search.value.is_empty() {
         if app.memory_items_marked.is_empty() {
