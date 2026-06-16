@@ -80,7 +80,7 @@ fn open(app: &mut App) -> Option<Action> {
         _ => {
             app.menu.pending_service = service;
             app.status.clear();
-            app.universe_choice_selected = 0;
+            app.universe_choice.selected = 0;
             app.screen = Screen::UniverseChoice;
             None
         }

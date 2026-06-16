@@ -6,7 +6,7 @@ use ratatui::Frame;
 
 use crate::app::{
     App, EntriesCreateField, MemoryCreateField, MessagingField, OrderedCreateField,
-    OrderedInputField, Screen, TextField, TreeTarget, UNIVERSE_CHOICE_ITEMS,
+    OrderedInputField, Screen, TextField, TreeTarget,
 };
 use crate::json_highlight;
 use crate::json_tree;
@@ -31,16 +31,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
 }
 
 pub(crate) fn draw_universe_input(frame: &mut Frame, app: &App, area: Rect) {
-    let block = Block::default().borders(Borders::ALL).title("roforgecloud");
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(0)])
-        .split(inner);
-
-    field_box(frame, rows[0], "Universe ID", &app.universe_input, true);
+    crate::screens::universe_input::draw(frame, app, area);
 }
 
 pub(crate) fn draw_menu(frame: &mut Frame, app: &App, area: Rect) {
@@ -48,53 +39,11 @@ pub(crate) fn draw_menu(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 pub(crate) fn draw_universe_choice(frame: &mut Frame, app: &App, area: Rect) {
-    let items: Vec<ListItem> = UNIVERSE_CHOICE_ITEMS
-        .iter()
-        .map(|label| ListItem::new(*label))
-        .collect();
-
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Universe"))
-        .highlight_style(HIGHLIGHT_STYLE);
-
-    let mut state = ListState::default();
-    state.select(Some(app.universe_choice_selected));
-    frame.render_stateful_widget(list, area, &mut state);
+    crate::screens::universe_choice::draw(frame, app, area);
 }
 
 pub(crate) fn draw_universe_select(frame: &mut Frame, app: &App, area: Rect) {
-    let visible = app.visible_universe_indices();
-
-    let items: Vec<ListItem> = visible
-        .iter()
-        .map(|&i| {
-            let id = app.available_universes[i];
-            let mut spans = vec![Span::raw(id.to_string())];
-            if let Some(name) = app.universe_names.get(&id) {
-                spans.push(Span::styled(
-                    format!("  ({name})"),
-                    Style::default().fg(Color::DarkGray),
-                ));
-            }
-            ListItem::new(Line::from(spans))
-        })
-        .collect();
-
-    let title = if app.universe_search.value.is_empty() {
-        "Select Universe".to_string()
-    } else {
-        format!("Select Universe (search: {})", app.universe_search.value)
-    };
-
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title(title))
-        .highlight_style(HIGHLIGHT_STYLE);
-
-    let mut state = ListState::default();
-    if !visible.is_empty() {
-        state.select(Some(app.universe_select_selected));
-    }
-    frame.render_stateful_widget(list, area, &mut state);
+    crate::screens::universe_select::draw(frame, app, area);
 }
 
 pub(crate) fn draw_messaging(frame: &mut Frame, app: &App, area: Rect) {
@@ -783,7 +732,7 @@ fn screen_binds(app: &App) -> String {
         Screen::UniverseChoice => {
             join_hints(&[MOVE, &hint_bar_entries(app, Scope::UniverseChoice), BACK_QUIT])
         }
-        Screen::UniverseSelect if app.universe_search_active => {
+        Screen::UniverseSelect if app.universe_select.search_active => {
             InputHint::SearchByIdOrName.to_string()
         }
         Screen::UniverseSelect => {
@@ -904,7 +853,7 @@ fn draw_keybinds(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(paragraph, area);
 }
 
-fn field_box(frame: &mut Frame, area: Rect, title: &str, field: &TextField, active: bool) {
+pub(crate) fn field_box(frame: &mut Frame, area: Rect, title: &str, field: &TextField, active: bool) {
     let block = Block::default()
         .borders(Borders::ALL)
         .title(title.to_string());
@@ -918,7 +867,7 @@ fn field_box(frame: &mut Frame, area: Rect, title: &str, field: &TextField, acti
     }
 }
 
-fn field_paragraph_box(
+pub(crate) fn field_paragraph_box(
     frame: &mut Frame,
     area: Rect,
     title: &str,

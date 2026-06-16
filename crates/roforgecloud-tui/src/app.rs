@@ -246,15 +246,14 @@ pub struct App {
     pub redirect_uri: String,
     pub logged_in: bool,
     pub universe_id: u64,
-    pub universe_input: TextField,
     pub available_universes: Vec<u64>,
     pub universe_names: std::collections::HashMap<u64, String>,
     pub universe_name_rx: tokio::sync::mpsc::UnboundedReceiver<(u64, String)>,
     pub universe_name_tx: tokio::sync::mpsc::UnboundedSender<(u64, String)>,
-    pub universe_choice_selected: usize,
-    pub universe_select_selected: usize,
-    pub universe_search: TextField,
-    pub universe_search_active: bool,
+
+    pub universe_choice: crate::screens::universe_choice::State,
+    pub universe_select: crate::screens::universe_select::State,
+    pub universe_input: crate::screens::universe_input::State,
     pub screen: Screen,
     pub should_quit: bool,
     pub loading: bool,
@@ -376,15 +375,13 @@ impl App {
             redirect_uri,
             logged_in,
             universe_id: 0,
-            universe_input: TextField::default(),
             available_universes,
             universe_names: std::collections::HashMap::new(),
             universe_name_rx: universe_name_channel.1,
             universe_name_tx: universe_name_channel.0,
-            universe_choice_selected: 0,
-            universe_search: TextField::default(),
-            universe_search_active: false,
-            universe_select_selected: 0,
+            universe_choice: crate::screens::universe_choice::State::new(),
+            universe_select: crate::screens::universe_select::State::new(),
+            universe_input: crate::screens::universe_input::State::new(),
             screen: Screen::Menu,
             should_quit: false,
             loading: false,
@@ -591,7 +588,7 @@ impl App {
             }
             Ok(universes) => {
                 self.available_universes = universes;
-                self.universe_select_selected = 0;
+                self.universe_select.selected = 0;
                 self.status.clear();
                 self.screen = Screen::UniverseSelect;
                 self.resolve_universe_names();
@@ -886,11 +883,11 @@ impl App {
     }
 
     pub fn visible_universe_indices(&self) -> Vec<usize> {
-        if self.universe_search.value.is_empty() {
+        if self.universe_select.search.value.is_empty() {
             return (0..self.available_universes.len()).collect();
         }
 
-        let needle = self.universe_search.value.to_lowercase();
+        let needle = self.universe_select.search.value.to_lowercase();
         self.available_universes
             .iter()
             .enumerate()
@@ -932,7 +929,7 @@ impl App {
             | Screen::Messaging
             | Screen::OrderedStoreInput
             | Screen::MemoryStoreInput => true,
-            Screen::UniverseSelect => self.universe_search_active,
+            Screen::UniverseSelect => self.universe_select.search_active,
             Screen::Stores => self.stores_new_active,
             Screen::Entries => {
                 self.entries_search_active

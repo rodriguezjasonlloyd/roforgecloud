@@ -6,7 +6,6 @@ use crate::app::{
     Action, App, EntriesCreateField, MemoryCreateField, MessagingField, OrderedCreateField,
     OrderedInputField, PendingConfirm, Screen, TextField, TreeTarget, ValueSource,
     SERVICE_DATA_STORES, SERVICE_MEMORY_STORES, SERVICE_MESSAGING, SERVICE_ORDERED_DATA_STORES,
-    UNIVERSE_CHOICE_ENTER_ID, UNIVERSE_CHOICE_ITEMS, UNIVERSE_CHOICE_LIST_ALL,
 };
 
 /// Which-key scope: one variant per screen that has a key dispatch table.
@@ -237,45 +236,9 @@ pub(crate) fn build_keymap() -> Keymap<KeyEvent, Scope, Act, Category> {
     // Menu (bindings delegated to screens::menu)
     crate::screens::menu::bind_keys(&mut keymap);
 
-    // UniverseChoice
-    bind(
-        &mut keymap,
-        KeyCode::Enter,
-        Act { desc: "select", handler: universe_choice_select },
-        Scope::UniverseChoice,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('l'),
-        Act { desc: "select", handler: universe_choice_select },
-        Scope::UniverseChoice,
-    );
-
-    // UniverseSelect
-    bind(
-        &mut keymap,
-        KeyCode::Char('/'),
-        Act {
-            desc: "search",
-            handler: |app| {
-                app.universe_search_active = true;
-                None
-            },
-        },
-        Scope::UniverseSelect,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Enter,
-        Act { desc: "select", handler: universe_select_choose },
-        Scope::UniverseSelect,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('l'),
-        Act { desc: "select", handler: universe_select_choose },
-        Scope::UniverseSelect,
-    );
+    // UniverseChoice / UniverseSelect (delegated to screen modules)
+    crate::screens::universe_choice::bind_keys(&mut keymap);
+    crate::screens::universe_select::bind_keys(&mut keymap);
 
     // Stores
     bind(&mut keymap, KeyCode::Enter, Act { desc: "open", handler: stores_open }, Scope::Stores);
@@ -934,33 +897,6 @@ pub(crate) fn build_keymap() -> Keymap<KeyEvent, Scope, Act, Category> {
 }
 
 
-fn universe_choice_select(app: &mut App) -> Option<Action> {
-    match app.universe_choice_selected {
-        UNIVERSE_CHOICE_ENTER_ID => {
-            app.universe_input.clear();
-            app.screen = Screen::UniverseInput;
-            None
-        }
-        UNIVERSE_CHOICE_LIST_ALL => {
-            if app.available_universes.is_empty() {
-                Some(Action::LoadUniverses)
-            } else {
-                app.universe_select_selected = 0;
-                app.screen = Screen::UniverseSelect;
-                None
-            }
-        }
-        _ => None,
-    }
-}
-
-fn universe_select_choose(app: &mut App) -> Option<Action> {
-    let visible = app.visible_universe_indices();
-    let &index = visible.get(app.universe_select_selected)?;
-    let universe_id = app.available_universes[index];
-    app.universe_id = universe_id;
-    enter_service(app)
-}
 
 fn stores_open(app: &mut App) -> Option<Action> {
     let store = app.stores.get(app.stores_selected)?;
@@ -1125,7 +1061,7 @@ fn memory_entries_view(app: &mut App) -> Option<Action> {
     Some(Action::LoadMemoryValue)
 }
 
-fn enter_service(app: &mut App) -> Option<Action> {
+pub(crate) fn enter_service(app: &mut App) -> Option<Action> {
     match app.menu.pending_service {
         SERVICE_DATA_STORES => {
             app.screen = Screen::Stores;
@@ -1320,87 +1256,16 @@ pub(crate) fn handle_menu_key(app: &mut App, code: KeyCode, mods: KeyModifiers) 
     crate::screens::menu::handle_key(app, code, mods)
 }
 
-pub(crate) fn handle_universe_choice_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> Option<Action> {
-    if let Some(result) = list_nav_key(
-        code,
-        &mut app.universe_choice_selected,
-        UNIVERSE_CHOICE_ITEMS.len(),
-    ) {
-        return result;
-    }
-    if let Some(result) = back_key(code, app, Screen::Menu) {
-        return result;
-    }
-    if let Some(result) = quit_key(code, app) {
-        return result;
-    }
-    dispatch(app, Scope::UniverseChoice, code, KeyModifiers::empty())
+pub(crate) fn handle_universe_choice_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> Option<Action> {
+    crate::screens::universe_choice::handle_key(app, code, mods)
 }
 
-pub(crate) fn handle_universe_select_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> Option<Action> {
-    if app.universe_search_active {
-        match code {
-            KeyCode::Enter | KeyCode::Esc => {
-                app.universe_search_active = false;
-                app.status.clear();
-            }
-            _ => {
-                if handle_text_field_key(&mut app.universe_search, code, |_| true) {
-                    app.universe_select_selected = 0;
-                }
-            }
-        }
-        return None;
-    }
-
-    let visible_len = app.visible_universe_indices().len();
-
-    if let Some(result) = list_nav_key(code, &mut app.universe_select_selected, visible_len) {
-        return result;
-    }
-    if let Some(result) = quit_key(code, app) {
-        return result;
-    }
-
-    if matches!(code, KeyCode::Esc | KeyCode::Backspace | KeyCode::Char('h')) {
-        if !app.universe_search.value.is_empty() {
-            app.universe_search.clear();
-            app.universe_select_selected = 0;
-            app.status.clear();
-            return None;
-        }
-        app.screen = Screen::UniverseChoice;
-        app.status.clear();
-        return None;
-    }
-
-    dispatch(app, Scope::UniverseSelect, code, KeyModifiers::empty())
+pub(crate) fn handle_universe_select_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> Option<Action> {
+    crate::screens::universe_select::handle_key(app, code, mods)
 }
 
-pub(crate) fn handle_universe_input_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> Option<Action> {
-    match code {
-        KeyCode::Backspace if app.universe_input.value.is_empty() => {
-            app.screen = Screen::UniverseChoice;
-            app.status.clear();
-            None
-        }
-        KeyCode::Esc => {
-            app.screen = Screen::UniverseChoice;
-            app.status.clear();
-            None
-        }
-        KeyCode::Enter => {
-            let Ok(id) = app.universe_input.value.parse::<u64>() else {
-                return None;
-            };
-            app.universe_id = id;
-            enter_service(app)
-        }
-        _ => {
-            handle_text_field_key(&mut app.universe_input, code, |c| c.is_ascii_digit());
-            None
-        }
-    }
+pub(crate) fn handle_universe_input_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> Option<Action> {
+    crate::screens::universe_input::handle_key(app, code, mods)
 }
 
 pub(crate) fn handle_messaging_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> Option<Action> {

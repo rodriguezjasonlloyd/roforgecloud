@@ -1,4 +1,7 @@
 pub(crate) mod menu;
+pub(crate) mod universe_choice;
+pub(crate) mod universe_input;
+pub(crate) mod universe_select;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::Rect;
@@ -30,22 +33,22 @@ pub(crate) const SCREENS: [ScreenDef; 13] = [
     // Screen::UniverseChoice (1)
     ScreenDef {
         scope: Some(Scope::UniverseChoice),
-        handle_key: crate::update::handle_universe_choice_key,
-        draw: crate::ui::draw_universe_choice,
-        bind_keys: None,
+        handle_key: universe_choice::handle_key,
+        draw: universe_choice::draw,
+        bind_keys: Some(universe_choice::bind_keys),
     },
     // Screen::UniverseSelect (2)
     ScreenDef {
         scope: Some(Scope::UniverseSelect),
-        handle_key: crate::update::handle_universe_select_key,
-        draw: crate::ui::draw_universe_select,
-        bind_keys: None,
+        handle_key: universe_select::handle_key,
+        draw: universe_select::draw,
+        bind_keys: Some(universe_select::bind_keys),
     },
     // Screen::UniverseInput (3)
     ScreenDef {
         scope: None,
-        handle_key: crate::update::handle_universe_input_key,
-        draw: crate::ui::draw_universe_input,
+        handle_key: universe_input::handle_key,
+        draw: universe_input::draw,
         bind_keys: None,
     },
     // Screen::Stores (4)
