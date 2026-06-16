@@ -11,7 +11,7 @@ use roforgecloud_core::opencloud::datastore::DataStoreInfo;
 
 use crate::app::{Action, App, EntriesCreateField, PendingConfirm, Screen, TextField, TextFieldExt};
 use crate::update::{Act, Category, Scope, bind, back_key, dispatch, handle_pending_confirm, handle_text_field_key, list_nav_key, quit_key};
-use crate::ui::{HIGHLIGHT_STYLE, centered_rect_lines, field_box};
+use crate::ui::{HIGHLIGHT_STYLE, breadcrumb, centered_rect_lines, field_box, universe_label};
 
 pub(crate) struct State {
     pub items: Vec<DataStoreInfo>,
@@ -128,16 +128,9 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let universe = match app.universe_names.get(&app.universe_id) {
-        Some(name) => format!("{} ({name})", app.universe_id),
-        None => app.universe_id.to_string(),
-    };
-    let base_title = format!("Data Stores (universe {universe})");
-    let title = if app.stores.marked.is_empty() {
-        base_title
-    } else {
-        format!("{base_title} ({} selected)", app.stores.marked.len())
-    };
+    let uni = universe_label(app);
+    let suffix = (!app.stores.marked.is_empty()).then(|| format!("{} selected", app.stores.marked.len()));
+    let title = breadcrumb(&[uni.as_str(), "data stores"], suffix.as_deref());
 
     let list = List::new(items)
         .block(Block::default().borders(Borders::ALL).title(title))

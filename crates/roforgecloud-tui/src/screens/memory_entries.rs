@@ -11,7 +11,7 @@ use roforgecloud_core::opencloud::memory_store::SortedMapItem;
 use crate::app::{Action, App, MemoryCreateField, PendingConfirm, Screen, TextField, TextFieldExt, TreeTarget};
 use crate::status;
 use crate::update::{self, Act, Category, Scope, bind, dispatch, handle_pending_confirm, handle_text_field_key, list_nav_key, quit_key};
-use crate::ui::{HIGHLIGHT_STYLE, centered_rect_lines, centered_rect, field_box, field_paragraph_box, draw_tree};
+use crate::ui::{HIGHLIGHT_STYLE, breadcrumb, centered_rect_lines, centered_rect, field_box, field_paragraph_box, draw_tree, universe_label};
 
 pub(crate) struct State {
     pub items: Vec<SortedMapItem>,
@@ -249,25 +249,16 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let store_label = match app.universe_names.get(&app.universe_id) {
-        Some(name) => format!("{} (universe {} ({name}))", app.memory_store_input.id, app.universe_id),
-        None => app.memory_store_input.id.clone(),
+    let uni = universe_label(app);
+    let q = app.memory_entries.search.get_value();
+    let n = app.memory_entries.marked.len();
+    let suffix = match (!q.is_empty(), n > 0) {
+        (true, true)  => Some(format!("search: {q}  ·  {n} selected")),
+        (true, false) => Some(format!("search: {q}")),
+        (false, true) => Some(format!("{n} selected")),
+        (false, false) => None,
     };
-    let title = if app.memory_entries.search.get_value().is_empty() {
-        if app.memory_entries.marked.is_empty() {
-            store_label
-        } else {
-            format!("{store_label} ({} selected)", app.memory_entries.marked.len())
-        }
-    } else if app.memory_entries.marked.is_empty() {
-        format!("{store_label} (search: {})", app.memory_entries.search.get_value())
-    } else {
-        format!(
-            "{store_label} (search: {}, {} selected)",
-            app.memory_entries.search.get_value(),
-            app.memory_entries.marked.len()
-        )
-    };
+    let title = breadcrumb(&[uni.as_str(), "memory stores", &app.memory_store_input.id], suffix.as_deref());
 
     let list = List::new(items)
         .block(Block::default().borders(Borders::ALL).title(title))

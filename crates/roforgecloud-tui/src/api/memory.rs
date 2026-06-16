@@ -110,8 +110,8 @@ impl App {
         {
             Ok(item) => {
                 let expire = item.expire_time.clone().unwrap_or_else(|| "—".to_string());
-                self.value.title =
-                    format!("{}/{id} (expires: {expire})", self.memory_store_input.id);
+                self.value.title = String::new();
+                self.value.expire = format!("expires: {expire}");
                 self.value.text = serde_json::to_string_pretty(&item.value).unwrap_or_default();
                 self.value.revision = item.etag;
                 self.value.scroll = 0;

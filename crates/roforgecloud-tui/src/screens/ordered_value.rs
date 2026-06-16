@@ -7,8 +7,9 @@ use ratatui::Frame;
 use ratatui_which_key::Keymap;
 use crossterm::event::KeyEvent;
 
-use crate::app::{Action, App, PendingConfirm, Screen};
+use crate::app::{Action, App, PendingConfirm, Screen, TextFieldExt};
 use crate::update::{self, Act, Category, Scope, bind, dispatch, back_key, quit_key, handle_pending_confirm};
+use crate::ui::{breadcrumb, universe_label};
 
 pub(crate) struct State {
     pub title: String,
@@ -144,10 +145,18 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
         ]));
     }
 
+    let uni = universe_label(app);
+    let store = app.ordered_store_input.store_id.get_value().to_string();
+    let scope = app.ordered_store_input.scope.get_value().to_string();
+    let scope_suffix = format!("scope: {scope}");
+    let title = breadcrumb(
+        &[uni.as_str(), "ordered data stores", store.as_str(), &app.ordered_value.title],
+        Some(scope_suffix.as_str()),
+    );
     let paragraph = Paragraph::new(lines).block(
         Block::default()
             .borders(Borders::ALL)
-            .title(app.ordered_value.title.clone()),
+            .title(title),
     );
     frame.render_widget(paragraph, area);
 }

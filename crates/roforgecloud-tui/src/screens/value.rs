@@ -7,10 +7,12 @@ use ratatui_which_key::Keymap;
 use crate::app::{Action, App, PendingConfirm, Screen, TextFieldExt, ValueSource};
 use crate::update::{Act, Category, Scope, bind, back_key, dispatch, handle_pending_confirm, handle_text_field_key, handle_tree_key, quit_key};
 use crate::json_highlight;
-use crate::ui::draw_tree;
+use crate::ui::{breadcrumb, draw_tree, universe_label};
 
 pub(crate) struct State {
     pub title: String,
+    pub scope: String,
+    pub expire: String,
     pub text: String,
     pub revision: Option<String>,
     pub scroll: u16,
@@ -23,6 +25,8 @@ impl State {
     pub(crate) fn new() -> Self {
         Self {
             title: String::new(),
+            scope: String::new(),
+            expire: String::new(),
             text: String::new(),
             revision: None,
             scroll: 0,
@@ -153,8 +157,20 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
+    let uni = universe_label(app);
+    let title = match app.value.source {
+        ValueSource::DataStore => {
+            let suffix = if app.value.scope.is_empty() { None } else { Some(app.value.scope.as_str()) };
+            breadcrumb(&[uni.as_str(), "data stores", &app.stores.data_store_id, &app.value.title], suffix)
+        }
+        ValueSource::MemoryStoreSortedMap => {
+            let suffix = if app.value.expire.is_empty() { None } else { Some(app.value.expire.as_str()) };
+            breadcrumb(&[uni.as_str(), "memory stores", &app.memory_store_input.id, &app.memory_item_editing_id], suffix)
+        }
+    };
+
     let paragraph = Paragraph::new(json_highlight::highlight(&app.value.text))
-        .block(Block::default().borders(Borders::ALL).title(app.value.title.clone()))
+        .block(Block::default().borders(Borders::ALL).title(title))
         .wrap(Wrap { trim: false })
         .scroll((app.value.scroll, 0));
 

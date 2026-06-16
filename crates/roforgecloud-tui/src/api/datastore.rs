@@ -234,7 +234,8 @@ impl App {
             .await
         {
             Ok((value, revision)) => {
-                self.value.title = format!("{}/{} (scope: {scope})", self.stores.data_store_id, key);
+                self.value.title = key.to_string();
+                self.value.scope = format!("scope: {scope}");
                 self.value.text = serde_json::to_string_pretty(&value).unwrap_or_default();
                 self.value.revision = revision;
                 self.value.scroll = 0;

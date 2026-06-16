@@ -115,10 +115,7 @@ impl App {
             .await
         {
             Ok(entry) => {
-                self.ordered_value.title = format!(
-                    "{}/{id} (scope: {})",
-                    self.ordered_store_input.store_id.get_value(), self.ordered_store_input.scope.get_value()
-                );
+                self.ordered_value.title = id.to_string();
                 self.ordered_value.value = entry.value;
                 self.ordered_value.editing = false;
                 self.ordered_value.increment_editing = false;

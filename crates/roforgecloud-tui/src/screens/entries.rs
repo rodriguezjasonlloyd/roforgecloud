@@ -16,7 +16,7 @@ use crate::update::{
     Act, Category, Scope, bind, dispatch, handle_pending_confirm, handle_text_field_key,
     handle_tree_key, list_nav_key, quit_key,
 };
-use crate::ui::{HIGHLIGHT_STYLE, centered_rect, centered_rect_lines, draw_tree, field_box, field_paragraph_box};
+use crate::ui::{HIGHLIGHT_STYLE, breadcrumb, centered_rect, centered_rect_lines, draw_tree, field_box, field_paragraph_box, universe_label};
 
 pub(crate) struct State {
     pub items: Vec<DataStoreEntryInfo>,
@@ -265,25 +265,16 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let store_label = match app.universe_names.get(&app.universe_id) {
-        Some(name) => format!("{} (universe {} ({name}))", app.stores.data_store_id, app.universe_id),
-        None => app.stores.data_store_id.clone(),
+    let uni = universe_label(app);
+    let q = app.entries.search.get_value();
+    let n = app.entries.marked.len();
+    let suffix = match (!q.is_empty(), n > 0) {
+        (true, true)  => Some(format!("search: {q}  ·  {n} selected")),
+        (true, false) => Some(format!("search: {q}")),
+        (false, true) => Some(format!("{n} selected")),
+        (false, false) => None,
     };
-    let title = if app.entries.search.get_value().is_empty() {
-        if app.entries.marked.is_empty() {
-            store_label
-        } else {
-            format!("{store_label} ({} selected)", app.entries.marked.len())
-        }
-    } else if app.entries.marked.is_empty() {
-        format!("{store_label} (search: {})", app.entries.search.get_value())
-    } else {
-        format!(
-            "{store_label} (search: {}, {} selected)",
-            app.entries.search.get_value(),
-            app.entries.marked.len()
-        )
-    };
+    let title = breadcrumb(&[uni.as_str(), "data stores", &app.stores.data_store_id], suffix.as_deref());
 
     let list = List::new(items)
         .block(Block::default().borders(Borders::ALL).title(title))

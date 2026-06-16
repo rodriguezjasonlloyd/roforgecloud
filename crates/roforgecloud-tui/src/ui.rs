@@ -12,6 +12,28 @@ use crate::update;
 
 pub(crate) const HIGHLIGHT_STYLE: Style = Style::new().bg(Color::Rgb(60, 60, 60)).fg(Color::White);
 
+pub(crate) fn breadcrumb(parts: &[&str], suffix: Option<&str>) -> Line<'static> {
+    let dim = Style::default().fg(Color::DarkGray);
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    for (i, &part) in parts.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled(" > ", dim));
+        }
+        spans.push(Span::raw(part.to_string()));
+    }
+    if let Some(s) = suffix {
+        spans.push(Span::styled(format!("  {s}"), dim));
+    }
+    Line::from(spans)
+}
+
+pub(crate) fn universe_label(app: &App) -> String {
+    app.universe_names
+        .get(&app.universe_id)
+        .cloned()
+        .unwrap_or_else(|| app.universe_id.to_string())
+}
+
 pub fn draw(frame: &mut Frame, app: &App) {
     let area = frame.area();
     let keybinds_height = keybinds_height(app, area.width);
@@ -89,14 +111,25 @@ pub(crate) fn draw_tree(frame: &mut Frame, app: &App, area: Rect) {
 
     let editing = editor.is_editing();
 
-    let title_base = match app.tree_target {
-        TreeTarget::Value => app.value.title.clone(),
-        TreeTarget::EntriesCreate | TreeTarget::MemoryCreate => "Value".to_string(),
-    };
-    let title = if editing {
-        format!("{title_base} (editing)")
-    } else {
-        format!("{title_base} (tree)")
+    let uni = universe_label(app);
+    let mode = if editing { "editing" } else { "tree" };
+    let title = match app.tree_target {
+        TreeTarget::Value => {
+            use crate::app::ValueSource;
+            match app.value.source {
+                ValueSource::DataStore => breadcrumb(
+                    &[uni.as_str(), "data stores", &app.stores.data_store_id, &app.value.title],
+                    Some(mode),
+                ),
+                ValueSource::MemoryStoreSortedMap => breadcrumb(
+                    &[uni.as_str(), "memory stores", &app.memory_store_input.id, &app.memory_item_editing_id],
+                    Some(mode),
+                ),
+            }
+        }
+        TreeTarget::EntriesCreate | TreeTarget::MemoryCreate => {
+            breadcrumb(&["value"], Some(mode))
+        }
     };
 
     let list = List::new(items)
@@ -163,7 +196,8 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
         };
         (app.status.text.clone(), color)
     };
-    let paragraph = Paragraph::new(Line::from(Span::styled(text, style)))
+    let paragraph = Paragraph::new(text)
+        .style(style)
         .block(Block::default().borders(Borders::ALL));
     frame.render_widget(paragraph, area);
 }

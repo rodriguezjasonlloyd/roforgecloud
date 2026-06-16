@@ -7,7 +7,7 @@ use ratatui::Frame;
 use ratatui_which_key::Keymap;
 
 use crate::app::{Action, App, Screen, TextField, TextFieldExt};
-use crate::ui::HIGHLIGHT_STYLE;
+use crate::ui::{HIGHLIGHT_STYLE, breadcrumb};
 use crate::update::{self, Act, Category, Scope};
 
 pub(crate) struct State {
@@ -101,11 +101,9 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let title = if app.universe_select.search.get_value().is_empty() {
-        "Select Universe".to_string()
-    } else {
-        format!("Select Universe (search: {})", app.universe_select.search.get_value())
-    };
+    let q = app.universe_select.search.get_value();
+    let suffix = (!q.is_empty()).then(|| format!("search: {q}"));
+    let title = breadcrumb(&["roforgecloud", "select universe"], suffix.as_deref());
 
     let list = List::new(items)
         .block(Block::default().borders(Borders::ALL).title(title))

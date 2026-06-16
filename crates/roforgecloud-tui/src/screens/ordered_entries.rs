@@ -11,7 +11,7 @@ use roforgecloud_core::opencloud::ordered_datastore::OrderedDataStoreEntry;
 use crate::app::{Action, App, OrderedCreateField, PendingConfirm, Screen, TextField, TextFieldExt};
 use crate::status;
 use crate::update::{self, Act, Category, Scope, bind, dispatch, handle_pending_confirm, handle_text_field_key, list_nav_key, quit_key};
-use crate::ui::{HIGHLIGHT_STYLE, centered_rect_lines, field_box, field_paragraph_box};
+use crate::ui::{HIGHLIGHT_STYLE, breadcrumb, centered_rect_lines, field_box, field_paragraph_box, universe_label};
 
 pub(crate) struct State {
     pub items: Vec<OrderedDataStoreEntry>,
@@ -205,31 +205,18 @@ pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let store_label = match app.universe_names.get(&app.universe_id) {
-        Some(name) => format!(
-            "{} (scope: {}, universe {} ({name}))",
-            app.ordered_store_input.store_id.get_value(), app.ordered_store_input.scope.get_value(), app.universe_id
-        ),
-        None => format!(
-            "{} (scope: {})",
-            app.ordered_store_input.store_id.get_value(), app.ordered_store_input.scope.get_value()
-        ),
+    let uni = universe_label(app);
+    let store = app.ordered_store_input.store_id.get_value().to_string();
+    let q = app.ordered_entries.search.get_value();
+    let n = app.ordered_entries.marked.len();
+    let scope_suffix = format!("scope: {}", app.ordered_store_input.scope.get_value());
+    let state_part = match (!q.is_empty(), n > 0) {
+        (true, true)  => Some(format!("{scope_suffix}  ·  search: {q}  ·  {n} selected")),
+        (true, false) => Some(format!("{scope_suffix}  ·  search: {q}")),
+        (false, true) => Some(format!("{scope_suffix}  ·  {n} selected")),
+        (false, false) => Some(scope_suffix),
     };
-    let title = if app.ordered_entries.search.get_value().is_empty() {
-        if app.ordered_entries.marked.is_empty() {
-            store_label
-        } else {
-            format!("{store_label} ({} selected)", app.ordered_entries.marked.len())
-        }
-    } else if app.ordered_entries.marked.is_empty() {
-        format!("{store_label} (search: {})", app.ordered_entries.search.get_value())
-    } else {
-        format!(
-            "{store_label} (search: {}, {} selected)",
-            app.ordered_entries.search.get_value(),
-            app.ordered_entries.marked.len()
-        )
-    };
+    let title = breadcrumb(&[uni.as_str(), "ordered data stores", store.as_str()], state_part.as_deref());
 
     let list = List::new(items)
         .block(Block::default().borders(Borders::ALL).title(title))

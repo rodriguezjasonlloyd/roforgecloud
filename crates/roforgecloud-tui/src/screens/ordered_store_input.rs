@@ -76,13 +76,10 @@ pub(crate) fn handle_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> O
 }
 
 pub(crate) fn draw(frame: &mut Frame, app: &App, area: Rect) {
-    let universe = match app.universe_names.get(&app.universe_id) {
-        Some(name) => format!("{} ({name})", app.universe_id),
-        None => app.universe_id.to_string(),
-    };
+    let uni = ui::universe_label(app);
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(format!("Ordered Data Stores (universe {universe})"));
+        .title(ui::breadcrumb(&[uni.as_str(), "ordered data stores"], None));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
