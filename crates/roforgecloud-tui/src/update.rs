@@ -1,11 +1,11 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 pub(crate) use ratatui_which_key::WhichKeyState;
-use ratatui_which_key::{Key, Keymap};
+use ratatui_which_key::Keymap;
 
 use crate::screens;
 
 use crate::app::{
-    Action, App, EntriesCreateField, MemoryCreateField, PendingConfirm, Screen, TextField,
+    Action, App, PendingConfirm, Screen, TextField,
     TreeTarget, ValueSource, SERVICE_DATA_STORES, SERVICE_MEMORY_STORES, SERVICE_MESSAGING,
     SERVICE_ORDERED_DATA_STORES,
 };
@@ -25,136 +25,6 @@ pub(crate) enum Scope {
     MemoryEntries,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct HintEntry {
-    pub key: std::borrow::Cow<'static, str>,
-    pub desc: std::borrow::Cow<'static, str>,
-}
-
-impl HintEntry {
-    pub(crate) const fn new(key: &'static str, desc: &'static str) -> Self {
-        Self {
-            key: std::borrow::Cow::Borrowed(key),
-            desc: std::borrow::Cow::Borrowed(desc),
-        }
-    }
-}
-
-pub(crate) fn render_hints(hints: &[HintEntry]) -> String {
-    hints
-        .iter()
-        .map(|h| format!("{}: {}", h.key, h.desc))
-        .collect::<Vec<_>>()
-        .join("   ")
-}
-
-pub(crate) fn join_hints(groups: &[&[HintEntry]]) -> String {
-    render_hints(
-        &groups
-            .iter()
-            .flat_map(|g| g.iter().cloned())
-            .collect::<Vec<_>>(),
-    )
-}
-
-pub(crate) const ENTER_CONFIRM: HintEntry = HintEntry::new("enter", "confirm");
-const ENTER_ESC_CONFIRM: HintEntry = HintEntry::new("enter/esc", "confirm");
-pub(crate) const ESC_CANCEL: HintEntry = HintEntry::new("esc", "cancel");
-const ESC_BACK: HintEntry = HintEntry::new("esc", "back");
-const TAB_SWITCH_FIELD: HintEntry = HintEntry::new("tab", "switch field");
-pub(crate) const ANY_OTHER_KEY_CANCEL: HintEntry = HintEntry::new("any other key", "cancel");
-
-pub(crate) const MOVE: &[HintEntry] = &[HintEntry::new("↑/↓ or j/k", "move")];
-pub(crate) const SCROLL: &[HintEntry] = &[
-    HintEntry::new("↑/↓ or j/k", "scroll"),
-    HintEntry::new("pgup/pgdn", "scroll x10"),
-];
-pub(crate) const QUIT: &[HintEntry] = &[HintEntry::new("q", "quit")];
-pub(crate) const BACK_QUIT: &[HintEntry] =
-    &[HintEntry::new("h", "back"), HintEntry::new("q", "quit")];
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum InputHint {
-    EditText,
-    SearchById,
-    SearchByIdOrName,
-    SearchByIdOrUsername,
-    UniverseInput,
-    StoreInput,
-    CreateChoosing,
-    TtlEdit,
-    Messaging,
-    OrderedStoreInput,
-    OrderedCreateActive,
-    AmountEdit,
-    MemoryStoreInput,
-    TreeLeaderMenu,
-}
-
-const TYPE_TO_EDIT: HintEntry = HintEntry::new("type", "edit value");
-const TYPE_SEARCH_ID: HintEntry = HintEntry::new("type", "search by id");
-const TYPE_SEARCH_ID_OR_NAME: HintEntry = HintEntry::new("type", "search by id or name");
-const TYPE_SEARCH_ID_OR_USERNAME: HintEntry = HintEntry::new("type", "search by id or username");
-const TYPE_UNIVERSE_ID: HintEntry = HintEntry::new("type", "universe id");
-const TYPE_STORE_ID: HintEntry = HintEntry::new("type", "data store id");
-const TYPE_TTL: HintEntry = HintEntry::new("type", "ttl seconds");
-const TYPE_AMOUNT: HintEntry = HintEntry::new("type", "amount");
-const N_FORM: HintEntry = HintEntry::new("n", "form");
-const E_EDITOR: HintEntry = HintEntry::new("e", "$EDITOR");
-const ENTER_CONTINUE: HintEntry = HintEntry::new("enter", "continue");
-const ENTER_CREATE: HintEntry = HintEntry::new("enter", "create");
-const ENTER_PUBLISH: HintEntry = HintEntry::new("enter", "publish");
-const TYPE_SORTED_MAP_NAME: HintEntry = HintEntry::new("type", "sorted map name");
-const V_EDIT_VALUE: HintEntry = HintEntry::new("v", "edit value");
-const K_EDIT_KEY: HintEntry = HintEntry::new("k", "edit key");
-const E_EDIT_EDITOR: HintEntry = HintEntry::new("e", "edit in $EDITOR");
-
-const EDIT_TEXT_HINTS: &[HintEntry] = &[TYPE_TO_EDIT, ENTER_CONFIRM, ESC_CANCEL];
-const SEARCH_ID_HINTS: &[HintEntry] = &[TYPE_SEARCH_ID, ENTER_ESC_CONFIRM];
-const SEARCH_ID_OR_NAME_HINTS: &[HintEntry] = &[TYPE_SEARCH_ID_OR_NAME, ENTER_ESC_CONFIRM];
-const SEARCH_ID_OR_USERNAME_HINTS: &[HintEntry] = &[TYPE_SEARCH_ID_OR_USERNAME, ENTER_ESC_CONFIRM];
-const UNIVERSE_INPUT_HINTS: &[HintEntry] = &[TYPE_UNIVERSE_ID, ENTER_CONFIRM, ESC_BACK];
-const STORE_INPUT_HINTS: &[HintEntry] = &[TYPE_STORE_ID, ENTER_CONTINUE, ESC_CANCEL];
-const CREATE_CHOOSING_HINTS: &[HintEntry] = &[N_FORM, E_EDITOR, ESC_CANCEL];
-const TTL_EDIT_HINTS: &[HintEntry] = &[TYPE_TTL, ENTER_CONFIRM, ESC_CANCEL];
-const MESSAGING_HINTS: &[HintEntry] = &[TAB_SWITCH_FIELD, ENTER_PUBLISH, ESC_BACK];
-const ORDERED_STORE_INPUT_HINTS: &[HintEntry] = &[TAB_SWITCH_FIELD, ENTER_CONFIRM, ESC_BACK];
-const ORDERED_CREATE_ACTIVE_HINTS: &[HintEntry] = &[TAB_SWITCH_FIELD, ENTER_CREATE, ESC_CANCEL];
-const AMOUNT_EDIT_HINTS: &[HintEntry] = &[TYPE_AMOUNT, ENTER_CONFIRM, ESC_CANCEL];
-const MEMORY_STORE_INPUT_HINTS: &[HintEntry] = &[TYPE_SORTED_MAP_NAME, ENTER_CONFIRM, ESC_BACK];
-const TREE_LEADER_MENU_HINTS: &[HintEntry] = &[
-    V_EDIT_VALUE,
-    K_EDIT_KEY,
-    E_EDIT_EDITOR,
-    ANY_OTHER_KEY_CANCEL,
-];
-
-impl InputHint {
-    pub(crate) fn entries(self) -> &'static [HintEntry] {
-        match self {
-            InputHint::EditText => EDIT_TEXT_HINTS,
-            InputHint::SearchById => SEARCH_ID_HINTS,
-            InputHint::SearchByIdOrName => SEARCH_ID_OR_NAME_HINTS,
-            InputHint::SearchByIdOrUsername => SEARCH_ID_OR_USERNAME_HINTS,
-            InputHint::UniverseInput => UNIVERSE_INPUT_HINTS,
-            InputHint::StoreInput => STORE_INPUT_HINTS,
-            InputHint::CreateChoosing => CREATE_CHOOSING_HINTS,
-            InputHint::TtlEdit => TTL_EDIT_HINTS,
-            InputHint::Messaging => MESSAGING_HINTS,
-            InputHint::OrderedStoreInput => ORDERED_STORE_INPUT_HINTS,
-            InputHint::OrderedCreateActive => ORDERED_CREATE_ACTIVE_HINTS,
-            InputHint::AmountEdit => AMOUNT_EDIT_HINTS,
-            InputHint::MemoryStoreInput => MEMORY_STORE_INPUT_HINTS,
-            InputHint::TreeLeaderMenu => TREE_LEADER_MENU_HINTS,
-        }
-    }
-}
-
-impl std::fmt::Display for InputHint {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", render_hints(self.entries()))
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Category {
@@ -203,14 +73,14 @@ pub(crate) fn bind(
 }
 
 pub(crate) fn bind_list_nav(km: &mut Keymap<KeyEvent, Scope, Act, Category>, scope: Scope) {
-    bind(km, KeyCode::Char('j'), Act { desc: "move down", handler: |_| None }, scope.clone());
-    bind(km, KeyCode::Down,     Act { desc: "move down", handler: |_| None }, scope.clone());
-    bind(km, KeyCode::Char('k'), Act { desc: "move up",  handler: |_| None }, scope.clone());
+    bind(km, KeyCode::Char('j'), Act { desc: "move down", handler: |_| None }, scope);
+    bind(km, KeyCode::Down,     Act { desc: "move down", handler: |_| None }, scope);
+    bind(km, KeyCode::Char('k'), Act { desc: "move up",  handler: |_| None }, scope);
     bind(km, KeyCode::Up,        Act { desc: "move up",  handler: |_| None }, scope);
 }
 
 pub(crate) fn bind_quit(km: &mut Keymap<KeyEvent, Scope, Act, Category>, scope: Scope) {
-    bind(km, KeyCode::Char('q'), Act { desc: "quit", handler: do_quit }, scope.clone());
+    bind(km, KeyCode::Char('q'), Act { desc: "quit", handler: do_quit }, scope);
     bind(km, KeyCode::Char('?'), Act { desc: "help", handler: |app| { app.which_key.toggle(); None } }, scope);
 }
 
@@ -234,31 +104,6 @@ pub(crate) fn dispatch(
     (act.handler)(app)
 }
 
-pub(crate) fn hint_bar_entries(app: &App, scope: Scope) -> Vec<HintEntry> {
-    let mut keys = app.which_key.clone();
-    keys.set_scope(scope);
-
-    let mut hints: Vec<HintEntry> = Vec::new();
-    for binding in keys
-        .current_bindings()
-        .into_iter()
-        .flat_map(|group| group.bindings.into_iter())
-    {
-        match hints.iter_mut().find(|h| h.desc == binding.description) {
-            Some(hint) => {
-                let key = hint.key.to_mut();
-                key.push('/');
-                key.push_str(&binding.key.display());
-            }
-            None => hints.push(HintEntry {
-                key: std::borrow::Cow::Owned(binding.key.display()),
-                desc: std::borrow::Cow::Owned(binding.description),
-            }),
-        }
-    }
-
-    hints
-}
 
 pub(crate) fn build_keymap() -> Keymap<KeyEvent, Scope, Act, Category> {
     let mut keymap = Keymap::new();
@@ -646,36 +491,6 @@ pub(crate) fn handle_pending_confirm(app: &mut App, code: KeyCode) -> Option<Opt
 }
 
 
-struct KeyAction {
-    hint: fn(&App) -> Option<HintEntry>,
-}
-
-const ENTRIES_CREATE_KEYS: &[KeyAction] = &[
-    KeyAction {
-        hint: |_| Some(TAB_SWITCH_FIELD),
-    },
-    KeyAction {
-        hint: |_| Some(HintEntry::new("enter", "create")),
-    },
-    KeyAction {
-        hint: |app| {
-            (app.entries.create_field == EntriesCreateField::Value)
-                .then_some(HintEntry::new("ctrl+t", "tree edit value"))
-        },
-    },
-    KeyAction {
-        hint: |_| Some(ESC_CANCEL),
-    },
-];
-
-pub(crate) fn entries_create_hints(app: &App) -> String {
-    render_hints(
-        &ENTRIES_CREATE_KEYS
-            .iter()
-            .filter_map(|action| (action.hint)(app))
-            .collect::<Vec<_>>(),
-    )
-}
 
 pub(crate) fn is_numeric_input_char(c: char) -> bool {
     c.is_ascii_digit() || c == '.' || c == '-'
@@ -747,29 +562,3 @@ pub(crate) fn handle_tree_key(
     dispatch(app, Scope::Tree, code, modifiers)
 }
 
-const MEMORY_CREATE_KEYS: &[KeyAction] = &[
-    KeyAction {
-        hint: |_| Some(TAB_SWITCH_FIELD),
-    },
-    KeyAction {
-        hint: |_| Some(HintEntry::new("enter", "create")),
-    },
-    KeyAction {
-        hint: |app| {
-            (app.memory_entries.create_field == MemoryCreateField::Value)
-                .then_some(HintEntry::new("ctrl+t", "tree edit value"))
-        },
-    },
-    KeyAction {
-        hint: |_| Some(ESC_CANCEL),
-    },
-];
-
-pub(crate) fn memory_create_hints(app: &App) -> String {
-    render_hints(
-        &MEMORY_CREATE_KEYS
-            .iter()
-            .filter_map(|action| (action.hint)(app))
-            .collect::<Vec<_>>(),
-    )
-}

@@ -160,28 +160,6 @@ pub enum PendingConfirm {
     TreeRefresh,
 }
 
-impl PendingConfirm {
-    pub fn footer_hint(&self) -> String {
-        use update::{render_hints, HintEntry, ANY_OTHER_KEY_CANCEL};
-
-        let confirm = match self {
-            PendingConfirm::DeleteStore
-            | PendingConfirm::BulkDeleteStores
-            | PendingConfirm::DeleteEntry
-            | PendingConfirm::BulkDeleteEntries
-            | PendingConfirm::DeleteOrderedEntry
-            | PendingConfirm::BulkDeleteOrderedEntries
-            | PendingConfirm::DeleteMemoryItem
-            | PendingConfirm::BulkDeleteMemoryItems => HintEntry::new("d", "confirm delete"),
-            PendingConfirm::BulkUndeleteStores => HintEntry::new("u", "confirm undelete"),
-            PendingConfirm::Quit => HintEntry::new("q", "confirm quit"),
-            PendingConfirm::TreeQuit => HintEntry::new("q/esc", "discard changes and exit tree"),
-            PendingConfirm::TreeRefresh => HintEntry::new("r", "discard changes and refresh"),
-        };
-
-        render_hints(&[confirm, ANY_OTHER_KEY_CANCEL])
-    }
-}
 
 pub struct App {
     pub client: OpenCloudClient,
@@ -382,40 +360,6 @@ impl App {
             || !self.entries.marked.is_empty()
             || !self.ordered_entries.marked.is_empty()
             || !self.memory_entries.marked.is_empty()
-    }
-
-    pub fn text_input_active(&self) -> bool {
-        match self.screen {
-            Screen::UniverseInput
-            | Screen::Messaging
-            | Screen::OrderedStoreInput
-            | Screen::MemoryStoreInput => true,
-            Screen::UniverseSelect => self.universe_select.search_active,
-            Screen::Stores => self.stores.new_active,
-            Screen::Entries => {
-                self.entries.search_active
-                    || self.entries.create_active
-                    || self.entries.create_choosing
-            }
-            Screen::Value => {
-                self.tree_editor.as_ref().is_some_and(|t| t.is_editing())
-                    || self.memory_entries.ttl_editing
-            }
-            Screen::OrderedEntries => {
-                self.ordered_entries.search_active
-                    || self.ordered_entries.create_active
-                    || self.ordered_entries.create_choosing
-            }
-            Screen::OrderedValue => {
-                self.ordered_value.editing || self.ordered_value.increment_editing
-            }
-            Screen::MemoryStoreEntries => {
-                self.memory_entries.search_active
-                    || self.memory_entries.create_active
-                    || self.memory_entries.create_choosing
-            }
-            _ => false,
-        }
     }
 
     pub fn check_confirm_timeout(&mut self) {

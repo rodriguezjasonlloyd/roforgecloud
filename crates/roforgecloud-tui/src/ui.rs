@@ -1,14 +1,13 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
-use crate::app::{App, Screen, TextFieldExt, TreeTarget};
+use crate::app::{App, TextFieldExt, TreeTarget};
 use crate::json_tree;
 use crate::screens;
 use crate::status;
-use crate::update;
 
 pub(crate) const HIGHLIGHT_STYLE: Style = Style::new().bg(Color::Rgb(60, 60, 60)).fg(Color::White);
 
@@ -36,15 +35,14 @@ pub(crate) fn universe_label(app: &App) -> String {
 
 pub fn draw(frame: &mut Frame, app: &App) {
     let area = frame.area();
-    let keybinds_height = keybinds_height(app, area.width);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(3 + keybinds_height)])
+        .constraints([Constraint::Min(1), Constraint::Length(3)])
         .split(area);
 
     (screens::def(app.screen).draw)(frame, app, chunks[0]);
 
-    draw_info(frame, app, chunks[1], keybinds_height);
+    draw_status(frame, app, chunks[1]);
 
     if app.which_key.active {
         draw_help(frame, app);
@@ -175,16 +173,6 @@ pub(crate) fn draw_tree(frame: &mut Frame, app: &App, area: Rect) {
     }
 }
 
-fn draw_info(frame: &mut Frame, app: &App, area: Rect, keybinds_height: u16) {
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Length(keybinds_height)])
-        .split(area);
-
-    draw_status(frame, app, rows[0]);
-    draw_keybinds(frame, app, rows[1]);
-}
-
 fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     let (text, style) = if app.loading {
         (status::loading().text, Style::default())
@@ -202,140 +190,6 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(paragraph, area);
 }
 
-use update::{join_hints, hint_bar_entries, InputHint, Scope, BACK_QUIT, MOVE, QUIT, SCROLL};
-
-fn screen_binds(app: &App) -> String {
-    match app.screen {
-        Screen::Menu => join_hints(&[MOVE, &hint_bar_entries(app, Scope::Menu), QUIT]),
-        Screen::UniverseChoice => {
-            join_hints(&[MOVE, &hint_bar_entries(app, Scope::UniverseChoice), BACK_QUIT])
-        }
-        Screen::UniverseSelect if app.universe_select.search_active => {
-            InputHint::SearchByIdOrName.to_string()
-        }
-        Screen::UniverseSelect => {
-            join_hints(&[MOVE, &hint_bar_entries(app, Scope::UniverseSelect), BACK_QUIT])
-        }
-        Screen::UniverseInput => InputHint::UniverseInput.to_string(),
-        Screen::Stores if app.stores.new_active => InputHint::StoreInput.to_string(),
-        Screen::Stores => join_hints(&[MOVE, &hint_bar_entries(app, Scope::Stores), BACK_QUIT]),
-        Screen::Entries if app.entries.search_active => {
-            InputHint::SearchByIdOrUsername.to_string()
-        }
-        Screen::Entries if app.tree_editor.as_ref().is_some_and(|t| t.is_editing()) => {
-            InputHint::EditText.to_string()
-        }
-        Screen::Entries if app.tree_editor.is_some() => {
-            join_hints(&[MOVE, &hint_bar_entries(app, Scope::Tree)])
-        }
-        Screen::Entries if app.entries.create_choosing => InputHint::CreateChoosing.to_string(),
-        Screen::Entries if app.entries.create_active => update::entries_create_hints(app),
-        Screen::Entries => join_hints(&[MOVE, &hint_bar_entries(app, Scope::Entries), BACK_QUIT]),
-        Screen::Value if app.tree_editor.as_ref().is_some_and(|t| t.is_editing()) => {
-            InputHint::EditText.to_string()
-        }
-        Screen::Value if app.tree_editor.is_some() => {
-            join_hints(&[MOVE, &hint_bar_entries(app, Scope::Tree)])
-        }
-        Screen::Value if app.memory_entries.ttl_editing => InputHint::TtlEdit.to_string(),
-        Screen::Value => {
-            let scope = match app.value.source {
-                crate::app::ValueSource::DataStore => Scope::DataStoreValue,
-                crate::app::ValueSource::MemoryStoreSortedMap => Scope::MemoryStoreValue,
-            };
-            join_hints(&[SCROLL, &hint_bar_entries(app, scope), BACK_QUIT])
-        }
-        Screen::Messaging => InputHint::Messaging.to_string(),
-        Screen::OrderedStoreInput => InputHint::OrderedStoreInput.to_string(),
-        Screen::OrderedEntries if app.ordered_entries.search_active => {
-            InputHint::SearchById.to_string()
-        }
-        Screen::OrderedEntries if app.ordered_entries.create_choosing => {
-            InputHint::CreateChoosing.to_string()
-        }
-        Screen::OrderedEntries if app.ordered_entries.create_active => {
-            InputHint::OrderedCreateActive.to_string()
-        }
-        Screen::OrderedEntries => {
-            join_hints(&[MOVE, &hint_bar_entries(app, Scope::OrderedEntries), BACK_QUIT])
-        }
-        Screen::OrderedValue if app.ordered_value.editing => InputHint::EditText.to_string(),
-        Screen::OrderedValue if app.ordered_value.increment_editing => {
-            InputHint::AmountEdit.to_string()
-        }
-        Screen::OrderedValue => {
-            join_hints(&[&hint_bar_entries(app, Scope::OrderedValue), BACK_QUIT])
-        }
-        Screen::MemoryStoreInput => InputHint::MemoryStoreInput.to_string(),
-        Screen::MemoryStoreEntries if app.memory_entries.search_active => {
-            InputHint::SearchById.to_string()
-        }
-        Screen::MemoryStoreEntries
-            if app.tree_editor.as_ref().is_some_and(|t| t.is_editing()) =>
-        {
-            InputHint::EditText.to_string()
-        }
-        Screen::MemoryStoreEntries if app.tree_editor.is_some() => {
-            join_hints(&[MOVE, &hint_bar_entries(app, Scope::Tree)])
-        }
-        Screen::MemoryStoreEntries if app.memory_entries.create_choosing => {
-            InputHint::CreateChoosing.to_string()
-        }
-        Screen::MemoryStoreEntries if app.memory_entries.create_active => {
-            update::memory_create_hints(app)
-        }
-        Screen::MemoryStoreEntries if app.memory_entries.ttl_editing => InputHint::TtlEdit.to_string(),
-        Screen::MemoryStoreEntries => {
-            join_hints(&[MOVE, &hint_bar_entries(app, Scope::MemoryEntries), BACK_QUIT])
-        }
-    }
-}
-
-fn keybinds_text(app: &App) -> String {
-    if let Some(pending) = &app.pending_confirm {
-        return pending.footer_hint();
-    }
-
-    if app.tree_editor.as_ref().is_some_and(|t| t.pending_leader()) {
-        return update::InputHint::TreeLeaderMenu.to_string();
-    }
-
-    let binds = screen_binds(app);
-    if app.text_input_active() {
-        binds
-    } else {
-        format!("{binds}   ?: help")
-    }
-}
-
-fn keybinds_height(app: &App, width: u16) -> u16 {
-    let text = keybinds_text(app);
-    let inner_width = width.saturating_sub(2).max(1) as usize;
-
-    let mut lines = 1u16;
-    let mut col = 0usize;
-    for word in text.split(' ') {
-        let word_len = word.chars().count();
-        if col == 0 {
-            col = word_len;
-        } else if col + 1 + word_len > inner_width {
-            lines += 1;
-            col = word_len;
-        } else {
-            col += 1 + word_len;
-        }
-    }
-
-    lines + 2
-}
-
-fn draw_keybinds(frame: &mut Frame, app: &App, area: Rect) {
-    let paragraph = Paragraph::new(Line::from(keybinds_text(app)))
-        .style(Style::default().fg(Color::DarkGray))
-        .wrap(Wrap { trim: true })
-        .block(Block::default().borders(Borders::ALL));
-    frame.render_widget(paragraph, area);
-}
 
 pub(crate) fn field_box(frame: &mut Frame, area: Rect, title: &str, field: &tui_textarea::TextArea<'static>, active: bool) {
     let block = Block::default()

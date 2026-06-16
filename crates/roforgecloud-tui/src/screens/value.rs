@@ -44,7 +44,7 @@ impl State {
 
 pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
     for scope in [Scope::DataStoreValue, Scope::MemoryStoreValue] {
-        bind_quit(km, scope.clone());
+        bind_quit(km, scope);
         bind(km, KeyCode::Char('h'), Act { desc: "back", handler: |app| {
             app.screen = match app.value.source {
                 ValueSource::DataStore => Screen::Entries,
@@ -52,11 +52,11 @@ pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
             };
             app.status.clear();
             None
-        }}, scope.clone());
-        bind(km, KeyCode::Char('r'), Act { desc: "refresh", handler: |_| Some(Action::LoadValue) }, scope.clone());
-        km.describe_group_for_scope("e", "edit", scope.clone());
-        km.bind("et", Act { desc: "tree edit", handler: |app| { app.enter_tree_mode(); None } }, Category::General, scope.clone());
-        km.bind("ee", Act { desc: "edit in $EDITOR", handler: |_| Some(Action::EditValueExternal) }, Category::General, scope.clone());
+        }}, scope);
+        bind(km, KeyCode::Char('r'), Act { desc: "refresh", handler: |_| Some(Action::LoadValue) }, scope);
+        km.describe_group_for_scope("e", "edit", scope);
+        km.bind("et", Act { desc: "tree edit", handler: |app| { app.enter_tree_mode(); None } }, Category::General, scope);
+        km.bind("ee", Act { desc: "edit in $EDITOR", handler: |_| Some(Action::EditValueExternal) }, Category::General, scope);
         bind(km, KeyCode::Char('d'), Act {
             desc: "delete",
             handler: |app| {
@@ -67,13 +67,13 @@ pub(crate) fn bind_keys(km: &mut Keymap<KeyEvent, Scope, Act, Category>) {
                 app.arm_confirm(pending);
                 None
             },
-        }, scope.clone());
-        bind(km, KeyCode::Up, Act { desc: "scroll up", handler: scroll_up }, scope.clone());
-        bind(km, KeyCode::Char('k'), Act { desc: "scroll up", handler: scroll_up }, scope.clone());
-        bind(km, KeyCode::Down, Act { desc: "scroll down", handler: scroll_down }, scope.clone());
-        bind(km, KeyCode::Char('j'), Act { desc: "scroll down", handler: scroll_down }, scope.clone());
-        bind(km, KeyCode::PageUp, Act { desc: "scroll up x10", handler: |app| { app.value.scroll = app.value.scroll.saturating_sub(10); None } }, scope.clone());
-        bind(km, KeyCode::PageDown, Act { desc: "scroll down x10", handler: |app| { let max = app.value.max_scroll(); app.value.scroll = (app.value.scroll + 10).min(max); None } }, scope.clone());
+        }, scope);
+        bind(km, KeyCode::Up, Act { desc: "scroll up", handler: scroll_up }, scope);
+        bind(km, KeyCode::Char('k'), Act { desc: "scroll up", handler: scroll_up }, scope);
+        bind(km, KeyCode::Down, Act { desc: "scroll down", handler: scroll_down }, scope);
+        bind(km, KeyCode::Char('j'), Act { desc: "scroll down", handler: scroll_down }, scope);
+        bind(km, KeyCode::PageUp, Act { desc: "scroll up x10", handler: |app| { app.value.scroll = app.value.scroll.saturating_sub(10); None } }, scope);
+        bind(km, KeyCode::PageDown, Act { desc: "scroll down x10", handler: |app| { let max = app.value.max_scroll(); app.value.scroll = (app.value.scroll + 10).min(max); None } }, scope);
     }
     bind(km, KeyCode::Char('t'), Act {
         desc: "edit ttl",
