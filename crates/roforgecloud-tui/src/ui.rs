@@ -149,44 +149,7 @@ fn draw_ordered_create_popup(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 pub(crate) fn draw_ordered_value(frame: &mut Frame, app: &App, area: Rect) {
-    let mut lines = vec![Line::from("")];
-
-    if app.ordered_value_editing {
-        lines.push(Line::from(vec![
-            Span::raw("value: "),
-            Span::styled(
-                format!("{}█", app.ordered_value_edit),
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::UNDERLINED),
-            ),
-        ]));
-    } else {
-        lines.push(Line::from(Span::styled(
-            app.ordered_value.to_string(),
-            Style::default().fg(Color::Yellow),
-        )));
-    }
-
-    if app.ordered_increment_editing {
-        lines.push(Line::from(""));
-        lines.push(Line::from(vec![
-            Span::raw("increment by: "),
-            Span::styled(
-                format!("{}█", app.ordered_increment_edit),
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::UNDERLINED),
-            ),
-        ]));
-    }
-
-    let paragraph = Paragraph::new(lines).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(app.ordered_value_title.clone()),
-    );
-    frame.render_widget(paragraph, area);
+    crate::screens::ordered_value::draw(frame, app, area);
 }
 
 pub(crate) fn draw_memory_store_input(frame: &mut Frame, app: &App, area: Rect) {
@@ -700,8 +663,8 @@ fn screen_binds(app: &App) -> String {
         Screen::OrderedEntries => {
             join_hints(&[MOVE, &hint_bar_entries(app, Scope::OrderedEntries), BACK_QUIT])
         }
-        Screen::OrderedValue if app.ordered_value_editing => InputHint::EditText.to_string(),
-        Screen::OrderedValue if app.ordered_increment_editing => {
+        Screen::OrderedValue if app.ordered_value.editing => InputHint::EditText.to_string(),
+        Screen::OrderedValue if app.ordered_value.increment_editing => {
             InputHint::AmountEdit.to_string()
         }
         Screen::OrderedValue => {

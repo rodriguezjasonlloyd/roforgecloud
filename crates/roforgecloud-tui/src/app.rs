@@ -312,12 +312,7 @@ pub struct App {
     pub ordered_entries_search: TextField,
     pub ordered_entries_search_active: bool,
 
-    pub ordered_value_title: String,
-    pub ordered_value: f64,
-    pub ordered_value_edit: String,
-    pub ordered_value_editing: bool,
-    pub ordered_increment_edit: String,
-    pub ordered_increment_editing: bool,
+    pub ordered_value: crate::screens::ordered_value::State,
 
     pub ordered_create_id: TextField,
     pub ordered_create_value: TextField,
@@ -424,12 +419,7 @@ impl App {
             ordered_entries_marked: std::collections::HashSet::new(),
             ordered_entries_search: TextField::default(),
             ordered_entries_search_active: false,
-            ordered_value_title: String::new(),
-            ordered_value: 0.0,
-            ordered_value_edit: String::new(),
-            ordered_value_editing: false,
-            ordered_increment_edit: String::new(),
-            ordered_increment_editing: false,
+            ordered_value: crate::screens::ordered_value::State::new(),
             ordered_create_id: TextField::default(),
             ordered_create_value: TextField::default(),
             ordered_create_field: OrderedCreateField::Id,
@@ -932,7 +922,7 @@ impl App {
                     || self.ordered_create_active
                     || self.ordered_create_choosing
             }
-            Screen::OrderedValue => self.ordered_value_editing || self.ordered_increment_editing,
+            Screen::OrderedValue => self.ordered_value.editing || self.ordered_value.increment_editing,
             Screen::MemoryStoreEntries => {
                 self.memory_items_search_active
                     || self.memory_create_active
@@ -1501,13 +1491,13 @@ impl App {
             .await
         {
             Ok(entry) => {
-                self.ordered_value_title = format!(
+                self.ordered_value.title = format!(
                     "{}/{id} (scope: {})",
                     self.ordered_store_input.store_id.value, self.ordered_store_input.scope.value
                 );
-                self.ordered_value = entry.value;
-                self.ordered_value_editing = false;
-                self.ordered_increment_editing = false;
+                self.ordered_value.value = entry.value;
+                self.ordered_value.editing = false;
+                self.ordered_value.increment_editing = false;
                 self.status.clear();
             }
             Err(err) => {
@@ -1522,7 +1512,7 @@ impl App {
         };
         let id = self.ordered_entries[index].id.clone();
 
-        let value: f64 = match self.ordered_value_edit.parse() {
+        let value: f64 = match self.ordered_value.edit.parse() {
             Ok(value) => value,
             Err(_) => {
                 self.status = "invalid number".to_string();
@@ -1543,9 +1533,9 @@ impl App {
             .await
         {
             Ok(entry) => {
-                self.ordered_value = entry.value;
+                self.ordered_value.value = entry.value;
                 self.ordered_entries[index].value = entry.value;
-                self.ordered_value_editing = false;
+                self.ordered_value.editing = false;
                 self.status = "saved".to_string();
             }
             Err(err) => {
@@ -1560,7 +1550,7 @@ impl App {
         };
         let id = self.ordered_entries[index].id.clone();
 
-        let amount: f64 = match self.ordered_increment_edit.parse() {
+        let amount: f64 = match self.ordered_value.increment_edit.parse() {
             Ok(amount) => amount,
             Err(_) => {
                 self.status = "invalid number".to_string();
@@ -1581,9 +1571,9 @@ impl App {
             .await
         {
             Ok(entry) => {
-                self.ordered_value = entry.value;
+                self.ordered_value.value = entry.value;
                 self.ordered_entries[index].value = entry.value;
-                self.ordered_increment_editing = false;
+                self.ordered_value.increment_editing = false;
                 self.status = "incremented".to_string();
             }
             Err(err) => {

@@ -746,49 +746,7 @@ pub(crate) fn build_keymap() -> Keymap<KeyEvent, Scope, Act, Category> {
     );
 
     // OrderedValue
-    bind(
-        &mut keymap,
-        KeyCode::Char('r'),
-        Act { desc: "refresh", handler: |_| Some(Action::LoadOrderedValue) },
-        Scope::OrderedValue,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Enter,
-        Act { desc: "edit", handler: ordered_value_edit },
-        Scope::OrderedValue,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('e'),
-        Act { desc: "edit", handler: ordered_value_edit },
-        Scope::OrderedValue,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('i'),
-        Act {
-            desc: "increment",
-            handler: |app| {
-                app.ordered_increment_edit.clear();
-                app.ordered_increment_editing = true;
-                None
-            },
-        },
-        Scope::OrderedValue,
-    );
-    bind(
-        &mut keymap,
-        KeyCode::Char('d'),
-        Act {
-            desc: "delete",
-            handler: |app| {
-                app.arm_confirm(PendingConfirm::DeleteOrderedEntry);
-                None
-            },
-        },
-        Scope::OrderedValue,
-    );
+    crate::screens::ordered_value::bind_keys(&mut keymap);
 
     // MemoryEntries
     bind(
@@ -1034,12 +992,6 @@ fn ordered_entries_view(app: &mut App) -> Option<Action> {
     }
     app.screen = Screen::OrderedValue;
     Some(Action::LoadOrderedValue)
-}
-
-fn ordered_value_edit(app: &mut App) -> Option<Action> {
-    app.ordered_value_edit = app.ordered_value.to_string();
-    app.ordered_value_editing = true;
-    None
 }
 
 fn memory_entries_delete(app: &mut App) -> Option<Action> {
@@ -1499,7 +1451,7 @@ pub(crate) fn handle_ordered_store_input_key(app: &mut App, code: KeyCode, mods:
     crate::screens::ordered_store_input::handle_key(app, code, mods)
 }
 
-fn is_numeric_input_char(c: char) -> bool {
+pub(crate) fn is_numeric_input_char(c: char) -> bool {
     c.is_ascii_digit() || c == '.' || c == '-'
 }
 
@@ -1599,50 +1551,8 @@ pub(crate) fn handle_ordered_entries_key(app: &mut App, code: KeyCode, _mods: Ke
     dispatch(app, Scope::OrderedEntries, code, KeyModifiers::empty())
 }
 
-pub(crate) fn handle_ordered_value_key(app: &mut App, code: KeyCode, _mods: KeyModifiers) -> Option<Action> {
-    if app.ordered_value_editing {
-        match code {
-            KeyCode::Esc => {
-                app.ordered_value_editing = false;
-                app.status.clear();
-            }
-            KeyCode::Enter => return Some(Action::SaveOrderedValue),
-            KeyCode::Backspace => {
-                app.ordered_value_edit.pop();
-            }
-            KeyCode::Char(c) if is_numeric_input_char(c) => app.ordered_value_edit.push(c),
-            _ => {}
-        }
-        return None;
-    }
-
-    if app.ordered_increment_editing {
-        match code {
-            KeyCode::Esc => {
-                app.ordered_increment_editing = false;
-                app.status.clear();
-            }
-            KeyCode::Enter => return Some(Action::IncrementOrderedEntry),
-            KeyCode::Backspace => {
-                app.ordered_increment_edit.pop();
-            }
-            KeyCode::Char(c) if is_numeric_input_char(c) => app.ordered_increment_edit.push(c),
-            _ => {}
-        }
-        return None;
-    }
-
-    if let Some(result) = handle_pending_confirm(app, code) {
-        return result;
-    }
-    if let Some(result) = quit_key(code, app) {
-        return result;
-    }
-    if let Some(result) = back_key(code, app, Screen::OrderedEntries) {
-        return result;
-    }
-
-    dispatch(app, Scope::OrderedValue, code, KeyModifiers::empty())
+pub(crate) fn handle_ordered_value_key(app: &mut App, code: KeyCode, mods: KeyModifiers) -> Option<Action> {
+    crate::screens::ordered_value::handle_key(app, code, mods)
 }
 
 fn handle_tree_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Option<Action> {
