@@ -28,7 +28,7 @@ impl App {
     pub async fn load_memory_items_page(&mut self) {
         let page_token = self.memory_entries.page_tokens.last().cloned().flatten();
 
-        self.status = status::LOADING.to_string();
+        self.status = status::loading();
         match self
             .client
             .list_sorted_map_items(
@@ -102,7 +102,7 @@ impl App {
         };
         let id = self.memory_entries.items[index].id.clone();
 
-        self.status = status::LOADING.to_string();
+        self.status = status::loading();
         match self
             .client
             .get_sorted_map_item(self.universe_id, &self.memory_store_input.id, &id)
@@ -137,7 +137,7 @@ impl App {
             }
         };
 
-        self.status = status::SAVING.to_string();
+        self.status = status::saving();
         match self
             .client
             .update_sorted_map_item(
@@ -159,12 +159,12 @@ impl App {
                     cached.etag = item.etag;
                     cached.expire_time = item.expire_time;
                 }
-                self.status = status::SAVED.to_string();
+                self.status = status::saved();
             }
             Err(err) if matches!(&err, roforgecloud_core::error::Error::Api { status, .. } if status.as_u16() == 409 || status.as_u16() == 412) =>
             {
                 self.load_memory_value().await;
-                self.status = status::CONFLICT.to_string();
+                self.status = status::conflict();
             }
             Err(err) => {
                 self.status = self.datastore_error(err);
@@ -175,7 +175,7 @@ impl App {
     pub async fn create_memory_item(&mut self) {
         let id = self.memory_entries.create_id.get_value().trim();
         if id.is_empty() || id.len() > 63 {
-            self.status = status::ID_TOO_LONG.to_string();
+            self.status = status::id_too_long();
             return;
         }
         let value: serde_json::Value = match serde_json::from_str(self.memory_entries.create_value.get_value()) {
@@ -188,12 +188,12 @@ impl App {
         let ttl: u64 = match self.memory_entries.create_ttl.get_value().parse() {
             Ok(ttl) => ttl,
             Err(_) => {
-                self.status = status::INVALID_TTL.to_string();
+                self.status = status::invalid_ttl();
                 return;
             }
         };
 
-        self.status = status::CREATING.to_string();
+        self.status = status::creating();
         match self
             .client
             .create_sorted_map_item(
@@ -210,7 +210,7 @@ impl App {
                 self.memory_entries.create_value.clear();
                 self.memory_entries.create_ttl.set_value("3600");
                 self.memory_entries.create_active = false;
-                self.status = status::CREATED.to_string();
+                self.status = status::created();
                 self.load_memory_items_page().await;
             }
             Err(err) => {
@@ -225,7 +225,7 @@ impl App {
         };
         let id = self.memory_entries.items[index].id.clone();
 
-        self.status = status::DELETING.to_string();
+        self.status = status::deleting();
         match self
             .client
             .delete_sorted_map_item(self.universe_id, &self.memory_store_input.id, &id)
@@ -240,7 +240,7 @@ impl App {
                 if self.screen == Screen::Value {
                     self.screen = Screen::MemoryStoreEntries;
                 }
-                self.status = status::DELETED.to_string();
+                self.status = status::deleted();
             }
             Err(err) => {
                 self.status = self.datastore_error(err);
@@ -254,7 +254,7 @@ impl App {
 
         let total = indices.len();
         if total == 0 {
-            self.status = status::NO_ITEMS_TO_DELETE.to_string();
+            self.status = status::no_items_to_delete();
             return;
         }
 
@@ -297,12 +297,12 @@ impl App {
         let ttl: u64 = match self.memory_entries.ttl_edit.get_value().parse() {
             Ok(ttl) => ttl,
             Err(_) => {
-                self.status = status::INVALID_TTL.to_string();
+                self.status = status::invalid_ttl();
                 return;
             }
         };
 
-        self.status = status::SAVING.to_string();
+        self.status = status::saving();
         match self
             .client
             .update_sorted_map_item(
@@ -319,7 +319,7 @@ impl App {
                 self.memory_entries.items[index].etag = updated.etag;
                 self.memory_entries.items[index].expire_time = updated.expire_time;
                 self.memory_entries.ttl_editing = false;
-                self.status = status::SAVED.to_string();
+                self.status = status::saved();
             }
             Err(err) => {
                 self.status = self.datastore_error(err);

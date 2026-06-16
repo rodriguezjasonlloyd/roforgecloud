@@ -28,7 +28,7 @@ impl App {
     pub async fn load_ordered_entries_page(&mut self) {
         let page_token = self.ordered_entries.page_tokens.last().cloned().flatten();
 
-        self.status = status::LOADING.to_string();
+        self.status = status::loading();
         match self
             .client
             .list_ordered_entries(
@@ -103,7 +103,7 @@ impl App {
         };
         let id = self.ordered_entries.items[index].id.clone();
 
-        self.status = status::LOADING.to_string();
+        self.status = status::loading();
         match self
             .client
             .get_ordered_entry(
@@ -139,12 +139,12 @@ impl App {
         let value: f64 = match self.ordered_value.edit.parse() {
             Ok(value) => value,
             Err(_) => {
-                self.status = status::INVALID_NUMBER.to_string();
+                self.status = status::invalid_number();
                 return;
             }
         };
 
-        self.status = status::SAVING.to_string();
+        self.status = status::saving();
         match self
             .client
             .update_ordered_entry(
@@ -160,7 +160,7 @@ impl App {
                 self.ordered_value.value = entry.value;
                 self.ordered_entries.items[index].value = entry.value;
                 self.ordered_value.editing = false;
-                self.status = status::SAVED.to_string();
+                self.status = status::saved();
             }
             Err(err) => {
                 self.status = self.datastore_error(err);
@@ -177,12 +177,12 @@ impl App {
         let amount: f64 = match self.ordered_value.increment_edit.parse() {
             Ok(amount) => amount,
             Err(_) => {
-                self.status = status::INVALID_NUMBER.to_string();
+                self.status = status::invalid_number();
                 return;
             }
         };
 
-        self.status = status::INCREMENTING.to_string();
+        self.status = status::incrementing();
         match self
             .client
             .increment_ordered_entry(
@@ -198,7 +198,7 @@ impl App {
                 self.ordered_value.value = entry.value;
                 self.ordered_entries.items[index].value = entry.value;
                 self.ordered_value.increment_editing = false;
-                self.status = status::INCREMENTED.to_string();
+                self.status = status::incremented();
             }
             Err(err) => {
                 self.status = self.datastore_error(err);
@@ -212,7 +212,7 @@ impl App {
         };
         let id = self.ordered_entries.items[index].id.clone();
 
-        self.status = status::DELETING.to_string();
+        self.status = status::deleting();
         match self
             .client
             .delete_ordered_entry(
@@ -232,7 +232,7 @@ impl App {
                 if self.screen == Screen::OrderedValue {
                     self.screen = Screen::OrderedEntries;
                 }
-                self.status = status::DELETED.to_string();
+                self.status = status::deleted();
             }
             Err(err) => {
                 self.status = self.datastore_error(err);
@@ -246,7 +246,7 @@ impl App {
 
         let total = indices.len();
         if total == 0 {
-            self.status = status::NO_ENTRIES_TO_DELETE.to_string();
+            self.status = status::no_entries_to_delete();
             return;
         }
 
@@ -288,18 +288,18 @@ impl App {
     pub async fn create_ordered_entry(&mut self) {
         let id = self.ordered_entries.create_id.get_value().trim();
         if id.is_empty() || id.len() > 63 {
-            self.status = status::ID_TOO_LONG.to_string();
+            self.status = status::id_too_long();
             return;
         }
         let value: f64 = match self.ordered_entries.create_value.get_value().parse() {
             Ok(value) => value,
             Err(_) => {
-                self.status = status::INVALID_NUMBER.to_string();
+                self.status = status::invalid_number();
                 return;
             }
         };
 
-        self.status = status::CREATING.to_string();
+        self.status = status::creating();
         match self
             .client
             .create_ordered_entry(
@@ -315,7 +315,7 @@ impl App {
                 self.ordered_entries.create_id.clear();
                 self.ordered_entries.create_value.clear();
                 self.ordered_entries.create_active = false;
-                self.status = status::CREATED.to_string();
+                self.status = status::created();
                 self.load_ordered_entries_page().await;
             }
             Err(err) => {

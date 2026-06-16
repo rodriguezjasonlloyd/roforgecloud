@@ -153,12 +153,18 @@ fn draw_info(frame: &mut Frame, app: &App, area: Rect, keybinds_height: u16) {
 }
 
 fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
-    let text = if app.loading {
-        status::LOADING.to_string()
+    let (text, style) = if app.loading {
+        (status::loading().text, Style::default())
     } else {
-        app.status.clone()
+        let color = match app.status.kind {
+            status::Kind::Ok => Style::default().fg(Color::Green),
+            status::Kind::Err => Style::default().fg(Color::Red),
+            status::Kind::Info => Style::default(),
+        };
+        (app.status.text.clone(), color)
     };
-    let paragraph = Paragraph::new(Line::from(text)).block(Block::default().borders(Borders::ALL));
+    let paragraph = Paragraph::new(Line::from(Span::styled(text, style)))
+        .block(Block::default().borders(Borders::ALL));
     frame.render_widget(paragraph, area);
 }
 

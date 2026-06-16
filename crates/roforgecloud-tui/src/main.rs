@@ -239,7 +239,7 @@ where
     };
 
     if edited == initial {
-        app.status = status::NO_CHANGES.to_string();
+        app.status = status::no_changes();
         return Ok(());
     }
 
@@ -286,7 +286,7 @@ where
     let edited = edited.trim();
 
     if edited == initial.trim() {
-        app.status = status::NO_CHANGES.to_string();
+        app.status = status::no_changes();
         return Ok(());
     }
 
@@ -300,7 +300,7 @@ where
                     .replace_value(Some(key), value);
             }
             _ => {
-                app.status = status::EXPECT_SINGLE_KEY_OBJ.to_string();
+                app.status = status::expect_single_key_obj();
             }
         }
     } else {
@@ -326,7 +326,7 @@ where
     let parsed: serde_json::Value = match serde_json::from_str(&edited) {
         Ok(value) => value,
         Err(err) => {
-            app.status = status::editor_json_error(err);
+            app.status = status::json_error(err);
             return Ok(());
         }
     };
@@ -335,7 +335,7 @@ where
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
     else {
-        app.status = status::ID_FIELD_REQUIRED.to_string();
+        app.status = status::id_field_required();
         return Ok(());
     };
     let value = parsed
@@ -372,7 +372,7 @@ where
     let parsed: serde_json::Value = match serde_json::from_str(&edited) {
         Ok(value) => value,
         Err(err) => {
-            app.status = status::editor_json_error(err);
+            app.status = status::json_error(err);
             return Ok(());
         }
     };
@@ -381,11 +381,11 @@ where
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
     else {
-        app.status = status::ID_FIELD_REQUIRED.to_string();
+        app.status = status::id_field_required();
         return Ok(());
     };
     let Some(value) = parsed.get("value").and_then(|v| v.as_f64()) else {
-        app.status = status::VALUE_FIELD_NUMBER.to_string();
+        app.status = status::value_field_number();
         return Ok(());
     };
 
@@ -418,7 +418,7 @@ where
     let parsed: serde_json::Value = match serde_json::from_str(&edited) {
         Ok(value) => value,
         Err(err) => {
-            app.status = status::editor_json_error(err);
+            app.status = status::json_error(err);
             return Ok(());
         }
     };
@@ -427,7 +427,7 @@ where
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
     else {
-        app.status = status::ID_FIELD_REQUIRED.to_string();
+        app.status = status::id_field_required();
         return Ok(());
     };
     let value = parsed

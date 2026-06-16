@@ -7,15 +7,15 @@ use crate::status;
 impl App {
     pub async fn login(&mut self) {
         let Some(oauth) = &self.oauth else {
-            self.status = status::OAUTH_NOT_CONFIGURED.to_string();
+            self.status = status::oauth_not_configured();
             return;
         };
 
-        self.status = status::OPENING_BROWSER.to_string();
+        self.status = status::opening_browser();
         match auth::force_login(oauth, &self.redirect_uri, &auth::NoopLoginPrompt).await {
             Ok(_) => {
                 self.logged_in = true;
-                self.status = status::LOGGED_IN.to_string();
+                self.status = status::logged_in();
             }
             Err(err) => self.status = status::api_error(err),
         }
@@ -23,14 +23,14 @@ impl App {
 
     pub async fn logout(&mut self) {
         let Some(oauth) = &self.oauth else {
-            self.status = status::OAUTH_NOT_CONFIGURED.to_string();
+            self.status = status::oauth_not_configured();
             return;
         };
 
         match auth::logout(oauth).await {
             Ok(()) => {
                 self.logged_in = false;
-                self.status = status::LOGGED_OUT.to_string();
+                self.status = status::logged_out();
             }
             Err(err) => self.status = status::api_error(err),
         }
@@ -38,11 +38,11 @@ impl App {
 
     pub async fn load_universes(&mut self) {
         let Some(oauth) = &self.oauth else {
-            self.status = status::OAUTH_NOT_CONFIGURED.to_string();
+            self.status = status::oauth_not_configured();
             return;
         };
 
-        self.status = status::FETCHING.to_string();
+        self.status = status::fetching();
         let result = async {
             let token = auth::access_token(oauth, &self.redirect_uri, &auth::NoopLoginPrompt).await?;
             let resources = oauth.token_resources(&token).await?;
@@ -52,7 +52,7 @@ impl App {
 
         match result {
             Ok(universes) if universes.is_empty() => {
-                self.status = status::NO_UNIVERSES.to_string();
+                self.status = status::no_universes();
             }
             Ok(universes) => {
                 self.available_universes = universes;

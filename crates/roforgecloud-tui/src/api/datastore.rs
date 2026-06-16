@@ -5,13 +5,11 @@ use crate::status;
 use crate::tree_editor::TreeEditor;
 
 impl App {
-    pub(crate) fn datastore_error(&self, err: roforgecloud_core::error::Error) -> String {
+    pub(crate) fn datastore_error(&self, err: roforgecloud_core::error::Error) -> status::Msg {
         if !self.has_api_key
             && matches!(&err, roforgecloud_core::error::Error::Api { status, .. } if status.as_u16() == 401)
         {
-            "error: Data Stores need an API key — OAuth tokens aren't accepted here. \
-             Set ROFORGE_API_KEY and restart."
-                .to_string()
+            status::datastore_needs_api_key()
         } else {
             status::api_error(err)
         }
@@ -19,7 +17,7 @@ impl App {
 
     pub async fn load_stores(&mut self) {
         self.resolve_current_universe_name();
-        self.status = status::LOADING.to_string();
+        self.status = status::loading();
         match self
             .client
             .list_data_stores(
@@ -48,14 +46,14 @@ impl App {
             return;
         };
 
-        self.status = status::DELETING.to_string();
+        self.status = status::deleting();
         match self
             .client
             .delete_data_store(self.universe_id, &store.id)
             .await
         {
             Ok(info) => {
-                self.status = status::STORE_DELETED.to_string();
+                self.status = status::store_deleted();
                 self.stores.items[self.stores.selected] = info;
             }
             Err(err) => {
@@ -69,14 +67,14 @@ impl App {
             return;
         };
 
-        self.status = status::RESTORING.to_string();
+        self.status = status::restoring();
         match self
             .client
             .undelete_data_store(self.universe_id, &store.id)
             .await
         {
             Ok(info) => {
-                self.status = status::STORE_RESTORED.to_string();
+                self.status = status::store_restored();
                 self.stores.items[self.stores.selected] = info;
             }
             Err(err) => {
@@ -149,7 +147,7 @@ impl App {
     pub async fn load_entries_page(&mut self) {
         let page_token = self.entries.page_tokens.last().cloned().flatten();
 
-        self.status = status::LOADING.to_string();
+        self.status = status::loading();
         match self
             .client
             .list_entries(
@@ -229,7 +227,7 @@ impl App {
             return;
         };
 
-        self.status = status::LOADING.to_string();
+        self.status = status::loading();
         match self
             .client
             .get_entry_with_revision(self.universe_id, &self.stores.data_store_id, &key, Some(&scope))
@@ -253,7 +251,7 @@ impl App {
     pub async fn refresh_tree(&mut self) {
         let cursor = self.tree_editor.as_ref().map(|t| t.cursor()).unwrap_or(0);
         self.load_value().await;
-        if self.status.is_empty() {
+        if self.status.text.is_empty() {
             self.enter_tree_mode();
             if let Some(editor) = &mut self.tree_editor {
                 editor.set_cursor(cursor);
@@ -304,7 +302,7 @@ impl App {
             }
         };
 
-        self.status = status::SAVING.to_string();
+        self.status = status::saving();
         match self
             .client
             .set_entry(
@@ -321,12 +319,12 @@ impl App {
                 self.value.text = serde_json::to_string_pretty(&value).unwrap_or_default();
                 self.value.revision = revision;
                 self.value.scroll = 0;
-                self.status = status::SAVED.to_string();
+                self.status = status::saved();
             }
             Err(err) if matches!(&err, roforgecloud_core::error::Error::Api { status, .. } if status.as_u16() == 409 || status.as_u16() == 412) =>
             {
                 self.load_value().await;
-                self.status = status::CONFLICT.to_string();
+                self.status = status::conflict();
             }
             Err(err) => {
                 self.status = self.datastore_error(err);
@@ -337,7 +335,7 @@ impl App {
     pub async fn create_entry(&mut self) {
         let id = self.entries.create_id.get_value().trim();
         if id.is_empty() {
-            self.status = status::ID_EMPTY.to_string();
+            self.status = status::id_empty();
             return;
         }
         let (scope, key) = match id.split_once('/') {
@@ -353,7 +351,7 @@ impl App {
             }
         };
 
-        self.status = status::CREATING.to_string();
+        self.status = status::creating();
         match self
             .client
             .create_entry(
@@ -369,7 +367,7 @@ impl App {
                 self.entries.create_id.clear();
                 self.entries.create_value.clear();
                 self.entries.create_active = false;
-                self.status = status::CREATED.to_string();
+                self.status = status::created();
                 self.load_entries_page().await;
             }
             Err(err) => {
@@ -386,7 +384,7 @@ impl App {
             return;
         };
 
-        self.status = status::DELETING.to_string();
+        self.status = status::deleting();
         match self
             .client
             .delete_entry(self.universe_id, &self.stores.data_store_id, &key, Some(&scope))
@@ -402,7 +400,7 @@ impl App {
                     self.exit_tree_mode();
                     self.screen = Screen::Entries;
                 }
-                self.status = status::DELETED.to_string();
+                self.status = status::deleted();
             }
             Err(err) => {
                 self.status = self.datastore_error(err);
@@ -427,7 +425,7 @@ impl App {
             .collect();
 
         if targets.is_empty() {
-            self.status = status::NO_ENTRIES_TO_DELETE.to_string();
+            self.status = status::no_entries_to_delete();
             return;
         }
 

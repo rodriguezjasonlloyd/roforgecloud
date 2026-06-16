@@ -201,7 +201,7 @@ pub struct App {
     pub screen: Screen,
     pub should_quit: bool,
     pub loading: bool,
-    pub status: String,
+    pub status: status::Msg,
 
     pub menu: screens::menu::State,
 
@@ -263,7 +263,7 @@ impl App {
             screen: Screen::Menu,
             should_quit: false,
             loading: false,
-            status: String::new(),
+            status: status::Msg::default(),
             menu: screens::menu::State::new(),
             stores: screens::stores::State::new(),
             entries: screens::entries::State::new(),

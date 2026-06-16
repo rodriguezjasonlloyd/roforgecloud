@@ -2,6 +2,7 @@ use tui_textarea::TextArea;
 
 use crate::app::{TextField, TextFieldExt};
 use crate::json_tree::{flatten, JsonNode, JsonNodeValue};
+use crate::status;
 
 pub struct TreeEditor {
     root: JsonNode,
@@ -159,21 +160,21 @@ impl TreeEditor {
         self.adding = false;
     }
 
-    pub fn yank(&self, clipboard: &mut Option<arboard::Clipboard>) -> Option<String> {
+    pub fn yank(&self, clipboard: &mut Option<arboard::Clipboard>) -> Option<status::Msg> {
         let value = self.current_value()?;
         let text = serde_json::to_string_pretty(&value).unwrap_or_default();
         let clipboard = clipboard.as_mut()?;
         clipboard.set_text(&text).ok()?;
-        Some("yanked".to_string())
+        Some(status::yanked())
     }
 
-    pub fn paste(&mut self, clipboard: &mut Option<arboard::Clipboard>) -> Option<String> {
+    pub fn paste(&mut self, clipboard: &mut Option<arboard::Clipboard>) -> Option<status::Msg> {
         let clipboard = clipboard.as_mut()?;
         let text = clipboard.get_text().ok()?;
         let value = serde_json::from_str::<serde_json::Value>(&text)
             .unwrap_or(serde_json::Value::String(text));
         self.replace_value(None, value);
-        Some("pasted".to_string())
+        Some(status::pasted())
     }
 
     pub fn current_value(&self) -> Option<serde_json::Value> {
