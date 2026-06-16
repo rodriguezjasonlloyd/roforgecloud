@@ -579,7 +579,7 @@ pub(crate) fn list_nav_key(
 
 pub(crate) fn quit_key(code: KeyCode, app: &mut App) -> Option<Option<Action>> {
     if app.which_key.active { return None; }
-    if !matches!(code, KeyCode::Char('q') | KeyCode::Esc) {
+    if code != KeyCode::Char('q') {
         return None;
     }
     if app.needs_quit_confirm() {
