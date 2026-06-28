@@ -82,7 +82,7 @@ async fn update_languages_toml(helix_dir: &Path, flags: &[String]) -> Result<()>
 
     let mut ls_table = toml_edit::Table::new();
     ls_table.set_implicit(true);
-    ls_table.insert("luau-lsp", toml_edit::Item::Table(lsp_table));
+    ls_table.insert("luau", toml_edit::Item::Table(lsp_table));
 
     let mut doc = toml_edit::DocumentMut::new();
     doc.insert("language-server", toml_edit::Item::Table(ls_table));
