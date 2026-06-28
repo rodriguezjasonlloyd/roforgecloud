@@ -2157,7 +2157,7 @@ dependencies = [
 
 [[package]]
 name = "roforgecloud-cli"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "arboard",
@@ -2176,7 +2176,7 @@ dependencies = [
 
 [[package]]
 name = "roforgecloud-core"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -2193,7 +2193,7 @@ dependencies = [
 
 [[package]]
 name = "roforgecloud-tui"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "arboard",
